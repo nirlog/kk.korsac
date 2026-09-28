@@ -1,0 +1,52 @@
+<?php
+
+declare(strict_types=1);
+
+use Bitrix\Main\Loader;
+use KK\Korsac\Install\BitrixSchemaGateway;
+use KK\Korsac\Install\Migration\InitialHlSchema;
+use KK\Korsac\Install\MigrationRunner;
+use KK\Korsac\Install\OptionMigrationStore;
+use KK\Korsac\Install\SchemaInstaller;
+
+class kk_korsac extends CModule
+{
+    public $MODULE_ID = 'kk.korsac';
+    public $MODULE_VERSION;
+    public $MODULE_VERSION_DATE;
+    public $MODULE_NAME = 'KORSAC domain data';
+    public $MODULE_DESCRIPTION = 'KORSAC Highload-block schema and server-side read infrastructure.';
+    public $PARTNER_NAME = 'KORSAC';
+    public $PARTNER_URI = '';
+
+    public function __construct()
+    {
+        $arModuleVersion = [];
+        include __DIR__ . '/version.php';
+        $this->MODULE_VERSION = $arModuleVersion['VERSION'];
+        $this->MODULE_VERSION_DATE = $arModuleVersion['VERSION_DATE'];
+    }
+
+    public function DoInstall(): void
+    {
+        global $APPLICATION;
+        try {
+            if (!Loader::includeModule('highloadblock')) {
+                throw new RuntimeException('The highloadblock module is required.');
+            }
+            RegisterModule($this->MODULE_ID);
+            require_once dirname(__DIR__) . '/include.php';
+            $runner = new MigrationRunner(new OptionMigrationStore());
+            $runner->run([new InitialHlSchema(new SchemaInstaller(new BitrixSchemaGateway()))]);
+        } catch (Throwable $exception) {
+            UnRegisterModule($this->MODULE_ID);
+            $APPLICATION->ThrowException($exception->getMessage());
+        }
+    }
+
+    public function DoUninstall(): void
+    {
+        // Deliberately retain HL blocks, rows and migration history.
+        UnRegisterModule($this->MODULE_ID);
+    }
+}
