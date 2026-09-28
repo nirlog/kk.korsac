@@ -6,10 +6,16 @@ namespace KK\Korsac\Install;
 
 final class SchemaDefinition
 {
-    public const COMPONENT_TYPES = [
+    public const COMPONENT_CLASS_TYPES = [
         'CPU' => 'KorsacCpuClass', 'GPU' => 'KorsacGpuClass', 'MB' => 'KorsacMotherboardClass',
         'RAM' => 'KorsacRamClass', 'SSD' => 'KorsacSsdClass', 'PSU' => 'KorsacPsuClass',
         'COOLER' => 'KorsacCoolerClass', 'CASE' => 'KorsacCaseClass', 'SERVICE' => 'KorsacServiceClass',
+    ];
+
+    public const PHYSICAL_SKU_TYPES = [
+        'CPU' => 'KorsacCpuClass', 'GPU' => 'KorsacGpuClass', 'MB' => 'KorsacMotherboardClass',
+        'RAM' => 'KorsacRamClass', 'SSD' => 'KorsacSsdClass', 'PSU' => 'KorsacPsuClass',
+        'COOLER' => 'KorsacCoolerClass', 'CASE' => 'KorsacCaseClass',
     ];
 
     /** @return array<string, array{name:string, table:string, fields:array<string,array>, indexes:array<string,array>}> */
@@ -69,7 +75,19 @@ final class SchemaDefinition
             $indexMap = [];
             foreach ($indexes as $index) {
                 [$indexName, $columns, $unique] = array_pad($index, 3, false);
-                $indexMap[$indexName] = ['columns' => $columns, 'unique' => $unique ?? false];
+                $indexColumns = [];
+                foreach ($columns as $columnName) {
+                    $field = $fields[$columnName];
+                    if ($field['type'] === 'string' && $field['length'] === null) {
+                        throw new \LogicException("Indexed string field {$name}.{$columnName} must have a maximum length");
+                    }
+                    $indexColumns[] = [
+                        'name' => $columnName,
+                        // Current Bitrix cores store standard string UFs as TEXT. A bounded prefix is mandatory.
+                        'length' => $field['type'] === 'string' ? $field['length'] : null,
+                    ];
+                }
+                $indexMap[$indexName] = ['columns' => $indexColumns, 'unique' => $unique ?? false];
             }
             $result[$name] = compact('name', 'table', 'fields') + ['indexes' => $indexMap];
         }

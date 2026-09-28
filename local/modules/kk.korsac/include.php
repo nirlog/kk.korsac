@@ -10,6 +10,8 @@ Loader::registerAutoLoadClasses('kk.korsac', [
     'KK\\Korsac\\Install\\OptionMigrationStore' => 'lib/Install/OptionMigrationStore.php',
     'KK\\Korsac\\Install\\MigrationRunner' => 'lib/Install/MigrationRunner.php',
     'KK\\Korsac\\Install\\SchemaDefinition' => 'lib/Install/SchemaDefinition.php',
+    'KK\\Korsac\\Install\\SchemaComparator' => 'lib/Install/SchemaComparator.php',
+    'KK\\Korsac\\Install\\SqlIndexBuilder' => 'lib/Install/SqlIndexBuilder.php',
     'KK\\Korsac\\Install\\SchemaGatewayInterface' => 'lib/Install/SchemaGatewayInterface.php',
     'KK\\Korsac\\Install\\BitrixSchemaGateway' => 'lib/Install/BitrixSchemaGateway.php',
     'KK\\Korsac\\Install\\SchemaInstaller' => 'lib/Install/SchemaInstaller.php',

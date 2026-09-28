@@ -12,9 +12,9 @@ final class ComponentTypeRegistry
     public static function blockName(string $componentType): string
     {
         $type = strtoupper(trim($componentType));
-        if (!isset(SchemaDefinition::COMPONENT_TYPES[$type])) {
+        if (!isset(SchemaDefinition::COMPONENT_CLASS_TYPES[$type])) {
             throw new InvalidArgumentException("Unknown component type: {$componentType}");
         }
-        return SchemaDefinition::COMPONENT_TYPES[$type];
+        return SchemaDefinition::COMPONENT_CLASS_TYPES[$type];
     }
 }

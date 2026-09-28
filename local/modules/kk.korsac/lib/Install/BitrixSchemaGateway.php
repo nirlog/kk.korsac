@@ -46,8 +46,9 @@ final class BitrixSchemaGateway implements SchemaGatewayInterface
     {
         $default = $field['default'] === 'now' ? null : $field['default'];
         $settings = [];
-        if ($field['length'] !== null) {
-            $settings['SIZE'] = (int)$field['length'];
+        if ($field['type'] === 'string' && $field['length'] !== null) {
+            $settings['MAX_LENGTH'] = (int)$field['length'];
+            $settings['SIZE'] = min((int)$field['length'], 60);
         }
         if ($default !== null) {
             $settings['DEFAULT_VALUE'] = $default;
@@ -72,16 +73,21 @@ final class BitrixSchemaGateway implements SchemaGatewayInterface
 
     public function getIndexes(string $tableName): array
     {
-        self::assertIdentifier($tableName);
+        SqlIndexBuilder::assertIdentifier($tableName);
         $rows = Application::getConnection()->query("SHOW INDEX FROM `{$tableName}`");
         $indexes = [];
         while ($row = $rows->fetch()) {
-            $name = (string)$row['Key_name'];
-            if ($name === 'PRIMARY') {
+            $name = (string)($row['Key_name'] ?? $row['KEY_NAME']);
+            if (strtoupper($name) === 'PRIMARY') {
                 continue;
             }
-            $indexes[$name] ??= ['unique' => (int)$row['Non_unique'] === 0, 'columns' => []];
-            $indexes[$name]['columns'][(int)$row['Seq_in_index']] = (string)$row['Column_name'];
+            $indexes[$name] ??= ['unique' => (int)($row['Non_unique'] ?? $row['NON_UNIQUE']) === 0, 'columns' => []];
+            $position = (int)($row['Seq_in_index'] ?? $row['SEQ_IN_INDEX']);
+            $subPart = $row['Sub_part'] ?? $row['SUB_PART'] ?? null;
+            $indexes[$name]['columns'][$position] = [
+                'name' => (string)($row['Column_name'] ?? $row['COLUMN_NAME']),
+                'length' => $subPart !== null ? (int)$subPart : null,
+            ];
         }
         foreach ($indexes as &$index) {
             ksort($index['columns']);
@@ -90,12 +96,19 @@ final class BitrixSchemaGateway implements SchemaGatewayInterface
         return $indexes;
     }
 
-    public function findDuplicateValues(string $tableName, string $column): array
+    public function findDuplicateRows(string $tableName, array $columns): array
     {
-        self::assertIdentifier($tableName);
-        self::assertIdentifier($column);
-        $sql = "SELECT `{$column}` AS value, COUNT(*) AS amount FROM `{$tableName}` "
-            . "WHERE `{$column}` IS NOT NULL GROUP BY `{$column}` HAVING COUNT(*) > 1 LIMIT 20";
+        SqlIndexBuilder::assertIdentifier($tableName);
+        $columnNames = [];
+        foreach ($columns as $column) {
+            $columnName = (string)$column['name'];
+            SqlIndexBuilder::assertIdentifier($columnName);
+            $columnNames[] = "`{$columnName}`";
+        }
+        $columnSql = implode(', ', $columnNames);
+        $notNullSql = implode(' AND ', array_map(static fn(string $column): string => "{$column} IS NOT NULL", $columnNames));
+        $sql = "SELECT {$columnSql}, COUNT(*) AS amount FROM `{$tableName}` WHERE {$notNullSql} "
+            . "GROUP BY {$columnSql} HAVING COUNT(*) > 1 LIMIT 20";
         $duplicates = [];
         $rows = Application::getConnection()->query($sql);
         while ($row = $rows->fetch()) {
@@ -106,14 +119,7 @@ final class BitrixSchemaGateway implements SchemaGatewayInterface
 
     public function createIndex(string $tableName, string $name, array $columns, bool $unique): void
     {
-        self::assertIdentifier($tableName);
-        self::assertIdentifier($name);
-        foreach ($columns as $column) {
-            self::assertIdentifier($column);
-        }
-        $columnSql = implode(', ', array_map(static fn(string $column): string => "`{$column}`", $columns));
-        $uniqueSql = $unique ? 'UNIQUE ' : '';
-        Application::getConnection()->queryExecute("CREATE {$uniqueSql}INDEX `{$name}` ON `{$tableName}` ({$columnSql})");
+        Application::getConnection()->queryExecute(SqlIndexBuilder::create($tableName, $name, $columns, $unique));
     }
 
     public function rows(string $blockName, array $select = ['*']): array
@@ -124,12 +130,5 @@ final class BitrixSchemaGateway implements SchemaGatewayInterface
         }
         $dataClass = HighloadBlockTable::compileEntity($block)->getDataClass();
         return $dataClass::getList(['select' => $select])->fetchAll();
-    }
-
-    private static function assertIdentifier(string $identifier): void
-    {
-        if (!preg_match('/^[a-zA-Z0-9_]+$/', $identifier)) {
-            throw new SystemException("Unsafe SQL identifier: {$identifier}");
-        }
     }
 }

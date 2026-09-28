@@ -6,6 +6,7 @@ namespace KK\Korsac\Health;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use KK\Korsac\Install\SchemaComparator;
 use KK\Korsac\Install\SchemaDefinition;
 use KK\Korsac\Install\SchemaGatewayInterface;
 
@@ -33,9 +34,7 @@ final class SchemaSelfCheck
                     continue;
                 }
                 $actual = $fields[$name];
-                if (($actual['USER_TYPE_ID'] ?? null) !== $expected['type']
-                    || ($actual['MULTIPLE'] ?? 'N') !== ($expected['multiple'] ? 'Y' : 'N')
-                    || ($actual['MANDATORY'] ?? 'N') !== ($expected['required'] ? 'Y' : 'N')) {
+                if (!SchemaComparator::fieldIsCompatible($actual, $expected)) {
                     $errors[] = ['code' => 'field_mismatch', 'entity' => $entity['name'], 'field' => $name];
                 }
             }
@@ -43,7 +42,7 @@ final class SchemaSelfCheck
             foreach ($entity['indexes'] as $name => $expected) {
                 if (!isset($indexes[$name])) {
                     $errors[] = ['code' => 'missing_index', 'entity' => $entity['name'], 'index' => $name];
-                } elseif ($indexes[$name] !== $expected) {
+                } elseif (!SchemaComparator::indexIsCompatible($indexes[$name], $expected)) {
                     $errors[] = ['code' => 'index_mismatch', 'entity' => $entity['name'], 'index' => $name];
                 }
             }
@@ -74,7 +73,7 @@ final class SchemaSelfCheck
                     $errors[] = ['code' => 'duplicate_xml_id', 'entity' => $entity, 'xmlId' => $xmlId];
                 }
                 $seen[$xmlId] = true;
-                if (in_array($entity, SchemaDefinition::COMPONENT_TYPES, true)
+                if (in_array($entity, SchemaDefinition::COMPONENT_CLASS_TYPES, true)
                     && isset($row['UF_PRICE']) && (float)$row['UF_PRICE'] < 0) {
                     $errors[] = ['code' => 'negative_price', 'entity' => $entity, 'xmlId' => $xmlId];
                 }
@@ -83,7 +82,7 @@ final class SchemaSelfCheck
         }
         foreach ($rowsByEntity['KorsacPhysicalSku'] ?? [] as $row) {
             $type = (string)($row['UF_COMPONENT_TYPE'] ?? '');
-            $block = SchemaDefinition::COMPONENT_TYPES[$type] ?? null;
+            $block = SchemaDefinition::PHYSICAL_SKU_TYPES[$type] ?? null;
             if ($block === null || !isset($codes[$block][(string)($row['UF_CLASS_XML_ID'] ?? '')])) {
                 $errors[] = ['code' => 'broken_class_reference', 'entity' => 'KorsacPhysicalSku', 'xmlId' => $row['UF_XML_ID'] ?? null];
             }

@@ -44,10 +44,7 @@ final class SchemaInstaller
                 continue;
             }
             $actual = $existing[$name];
-            $compatible = ($actual['USER_TYPE_ID'] ?? null) === $expected['type']
-                && ($actual['MULTIPLE'] ?? 'N') === ($expected['multiple'] ? 'Y' : 'N')
-                && ($actual['MANDATORY'] ?? 'N') === ($expected['required'] ? 'Y' : 'N');
-            if (!$compatible) {
+            if (!SchemaComparator::fieldIsCompatible($actual, $expected)) {
                 throw new SchemaMismatchException("Incompatible field {$entity['name']}.{$name}");
             }
         }
@@ -58,17 +55,15 @@ final class SchemaInstaller
         $existing = $this->gateway->getIndexes($entity['table']);
         foreach ($entity['indexes'] as $name => $expected) {
             if (isset($existing[$name])) {
-                if ($existing[$name] !== $expected) {
+                if (!SchemaComparator::indexIsCompatible($existing[$name], $expected)) {
                     throw new SchemaMismatchException("Incompatible index {$entity['table']}.{$name}");
                 }
                 continue;
             }
             if ($expected['unique']) {
-                foreach ($expected['columns'] as $column) {
-                    $duplicates = $this->gateway->findDuplicateValues($entity['table'], $column);
-                    if ($duplicates !== []) {
-                        throw new SchemaMismatchException("Cannot create {$name}: duplicate {$column} values exist");
-                    }
+                $duplicates = $this->gateway->findDuplicateRows($entity['table'], $expected['columns']);
+                if ($duplicates !== []) {
+                    throw new SchemaMismatchException("Cannot create {$name}: duplicate values exist");
                 }
             }
             $this->gateway->createIndex($entity['table'], $name, $expected['columns'], $expected['unique']);
