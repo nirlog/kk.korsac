@@ -10,7 +10,8 @@ use KK\Korsac\Install\MigrationRunner;
 use KK\Korsac\Install\OptionMigrationStore;
 use KK\Korsac\Install\SchemaInstaller;
 
-$documentRoot = $_SERVER['DOCUMENT_ROOT'] ?: dirname(__DIR__, 4);
+$documentRoot = ($_SERVER['DOCUMENT_ROOT'] ?? '') ?: dirname(__DIR__, 4);
+$_SERVER['DOCUMENT_ROOT'] = $documentRoot;
 require $documentRoot . '/bitrix/modules/main/include/prolog_before.php';
 if (!Loader::includeModule('highloadblock') || !Loader::includeModule('kk.korsac')) {
     fwrite(STDERR, "Required modules are not available.\n"); exit(2);

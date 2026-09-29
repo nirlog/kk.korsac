@@ -30,6 +30,21 @@ $test('module bootstrap registers namespace from its own directory', static func
     $assert($includeSource !== false && !str_contains($includeSource, '/bitrix/modules/kk.korsac'), 'Bootstrap contains a hard-coded Bitrix module holder');
 });
 
+$test('CLI entrypoints synchronize DOCUMENT_ROOT before Bitrix bootstrap', static function () use ($assert): void {
+    $moduleRoot = dirname(__DIR__, 2);
+    foreach (['tools/schema.php', 'tests/Integration/smoke.php', 'tests/Integration/install_smoke.php'] as $relativePath) {
+        $source = file_get_contents($moduleRoot . '/' . $relativePath);
+        $assert($source !== false, "Cannot read {$relativePath}");
+        $syncPosition = strpos($source, '$_SERVER[\'DOCUMENT_ROOT\'] = $documentRoot;');
+        $prologPosition = strpos($source, <<<'PHP'
+require $documentRoot . '/bitrix/modules/main/include/prolog_before.php';
+PHP
+        );
+        $assert($syncPosition !== false, "{$relativePath} does not synchronize DOCUMENT_ROOT");
+        $assert($prologPosition !== false && $syncPosition < $prologPosition, "{$relativePath} synchronizes DOCUMENT_ROOT too late");
+    }
+});
+
 $test('schema contains all entities with stable mapping', static function () use ($assert): void {
     $entities = SchemaDefinition::entities();
     $assert(count($entities) === 12);

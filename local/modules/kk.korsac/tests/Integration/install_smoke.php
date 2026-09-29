@@ -8,7 +8,8 @@ use KK\Korsac\Health\SchemaSelfCheck;
 use KK\Korsac\Install\BitrixSchemaGateway;
 use KK\Korsac\Install\MigrationRunner;
 
-$documentRoot = $_SERVER['DOCUMENT_ROOT'] ?: dirname(__DIR__, 5);
+$documentRoot = ($_SERVER['DOCUMENT_ROOT'] ?? '') ?: dirname(__DIR__, 5);
+$_SERVER['DOCUMENT_ROOT'] = $documentRoot;
 require $documentRoot . '/bitrix/modules/main/include/prolog_before.php';
 
 if (ModuleManager::isModuleInstalled('kk.korsac')) {

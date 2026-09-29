@@ -7,7 +7,8 @@ use KK\Korsac\Health\SchemaSelfCheck;
 use KK\Korsac\Install\BitrixSchemaGateway;
 use KK\Korsac\Install\SchemaInstaller;
 
-$documentRoot = $_SERVER['DOCUMENT_ROOT'] ?: dirname(__DIR__, 5);
+$documentRoot = ($_SERVER['DOCUMENT_ROOT'] ?? '') ?: dirname(__DIR__, 5);
+$_SERVER['DOCUMENT_ROOT'] = $documentRoot;
 require $documentRoot . '/bitrix/modules/main/include/prolog_before.php';
 if (!Loader::includeModule('highloadblock') || !Loader::includeModule('kk.korsac')) {
     fwrite(STDERR, "Required modules are not available.\n"); exit(2);
