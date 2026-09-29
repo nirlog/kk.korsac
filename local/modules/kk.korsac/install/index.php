@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Bitrix\Main\Loader;
+use Bitrix\Main\ModuleManager;
 use KK\Korsac\Install\BitrixSchemaGateway;
 use KK\Korsac\Install\Migration\InitialHlSchema;
 use KK\Korsac\Install\MigrationRunner;
@@ -30,16 +31,29 @@ class kk_korsac extends CModule
     public function DoInstall(): void
     {
         global $APPLICATION;
+        $registeredHere = false;
         try {
             if (!Loader::includeModule('highloadblock')) {
                 throw new RuntimeException('The highloadblock module is required.');
             }
-            RegisterModule($this->MODULE_ID);
+
+            // Bootstrap from this module directory before registration, so /local and /bitrix holders work alike.
             require_once dirname(__DIR__) . '/include.php';
+
+            if (!ModuleManager::isModuleInstalled($this->MODULE_ID)) {
+                RegisterModule($this->MODULE_ID);
+                $registeredHere = ModuleManager::isModuleInstalled($this->MODULE_ID);
+                if (!$registeredHere) {
+                    throw new RuntimeException('Failed to register module kk.korsac.');
+                }
+            }
+
             $runner = new MigrationRunner(new OptionMigrationStore());
             $runner->run([new InitialHlSchema(new SchemaInstaller(new BitrixSchemaGateway()))]);
         } catch (Throwable $exception) {
-            UnRegisterModule($this->MODULE_ID);
+            if ($registeredHere) {
+                UnRegisterModule($this->MODULE_ID);
+            }
             $APPLICATION->ThrowException($exception->getMessage());
         }
     }

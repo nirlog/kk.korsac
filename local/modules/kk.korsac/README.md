@@ -9,7 +9,7 @@
 - поддерживаемый Битриксом MySQL/MariaDB;
 - права БД на `CREATE INDEX`.
 
-Разместите каталог `kk.korsac` в `local/modules/`, затем установите модуль в стандартном интерфейсе модулей Битрикс. Каталог KORSAC и `IBLOCK_ID` не требуются.
+Разместите каталог `kk.korsac` в `local/modules/`, затем установите модуль в стандартном интерфейсе модулей Битрикс. Bootstrap регистрирует namespace `KK\Korsac` по абсолютному пути, вычисленному от `include.php`, поэтому install-time autoload не зависит от выбора module holder (`local/modules` или `bitrix/modules`). Каталог KORSAC и `IBLOCK_ID` не требуются.
 
 ## Модель данных
 
@@ -49,13 +49,19 @@ Pure-PHP тесты не требуют Битрикс:
 php local/modules/kk.korsac/tests/Unit/run.php
 ```
 
-Smoke-тест запускается в установленном сайте Битрикс. Он дважды выполняет idempotent schema installer и затем self-check:
+Install smoke запускается только на тестовом сайте, где `kk.korsac` ещё не зарегистрирован. При нарушении precondition он завершается без изменений; при успехе устанавливает модуль и намеренно оставляет его зарегистрированным, не удаляя HL data:
+
+```bash
+php local/modules/kk.korsac/tests/Integration/install_smoke.php
+```
+
+Обычный smoke запускается после установки. Он дважды выполняет idempotent schema installer и затем self-check:
 
 ```bash
 php local/modules/kk.korsac/tests/Integration/smoke.php
 ```
 
-Перед smoke-тестом задайте `DOCUMENT_ROOT`, если текущий каталог не является корнем сайта.
+Перед smoke-тестами задайте `DOCUMENT_ROOT`, если текущий каталог не является корнем сайта.
 
 ## Удаление
 

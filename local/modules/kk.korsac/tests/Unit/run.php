@@ -21,6 +21,15 @@ $assert = static function (bool $condition, string $message = 'Assertion failed'
     if (!$condition) { throw new RuntimeException($message); }
 };
 
+$test('module bootstrap registers namespace from its own directory', static function () use ($assert): void {
+    $namespaces = require __DIR__ . '/fixtures/load_module_include.php';
+    $expected = realpath(dirname(__DIR__, 2) . '/lib');
+    $actual = realpath($namespaces['KK\\Korsac'] ?? '');
+    $assert($expected !== false && $actual === $expected, 'Namespace root is not the module lib directory');
+    $includeSource = file_get_contents(dirname(__DIR__, 2) . '/include.php');
+    $assert($includeSource !== false && !str_contains($includeSource, '/bitrix/modules/kk.korsac'), 'Bootstrap contains a hard-coded Bitrix module holder');
+});
+
 $test('schema contains all entities with stable mapping', static function () use ($assert): void {
     $entities = SchemaDefinition::entities();
     $assert(count($entities) === 12);
