@@ -61,6 +61,12 @@ php local/modules/kk.korsac/tests/Integration/install_smoke.php
 php local/modules/kk.korsac/tests/Integration/smoke.php
 ```
 
+Acceptance smoke временно создаёт ATX/MINI ComponentClass, две Physical SKU, две Supplier Offer и Validated Build, проверяет repository и связи, запускает self-check, а затем в `finally` удаляет по сохранённым ID только fixtures текущего запуска и повторяет self-check:
+
+```bash
+php local/modules/kk.korsac/tests/Integration/acceptance_smoke.php
+```
+
 При обычном CLI-запуске из checkout скрипты вычисляют document root относительно собственного расположения и устанавливают `$_SERVER['DOCUMENT_ROOT']` до подключения `prolog_before.php`; wrapper для этого не требуется.
 
 ## Удаление

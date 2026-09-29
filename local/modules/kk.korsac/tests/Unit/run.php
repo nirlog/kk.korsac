@@ -32,7 +32,7 @@ $test('module bootstrap registers namespace from its own directory', static func
 
 $test('CLI entrypoints synchronize DOCUMENT_ROOT before Bitrix bootstrap', static function () use ($assert): void {
     $moduleRoot = dirname(__DIR__, 2);
-    foreach (['tools/schema.php', 'tests/Integration/smoke.php', 'tests/Integration/install_smoke.php'] as $relativePath) {
+    foreach (['tools/schema.php', 'tests/Integration/smoke.php', 'tests/Integration/install_smoke.php', 'tests/Integration/acceptance_smoke.php'] as $relativePath) {
         $source = file_get_contents($moduleRoot . '/' . $relativePath);
         $assert($source !== false, "Cannot read {$relativePath}");
         $syncPosition = strpos($source, '$_SERVER[\'DOCUMENT_ROOT\'] = $documentRoot;');
