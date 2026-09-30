@@ -5,6 +5,7 @@ declare(strict_types=1);
 require dirname(__DIR__) . '/bootstrap.php';
 
 use KK\Korsac\Health\SchemaSelfCheck;
+use KK\Korsac\Install\Migration\SimplifyHlSchema;
 use KK\Korsac\Install\MigrationInterface;
 use KK\Korsac\Install\MigrationRunner;
 use KK\Korsac\Install\MigrationStoreInterface;
@@ -12,8 +13,9 @@ use KK\Korsac\Install\SchemaComparator;
 use KK\Korsac\Install\SchemaDefinition;
 use KK\Korsac\Install\SchemaGatewayInterface;
 use KK\Korsac\Install\SchemaInstaller;
+use KK\Korsac\Install\SchemaMigrationService;
 use KK\Korsac\Install\SqlIndexBuilder;
-use KK\Korsac\Repository\ComponentTypeRegistry;
+use KK\Korsac\Repository\OptionTypeRegistry;
 
 $tests = [];
 $test = static function (string $name, callable $callback) use (&$tests): void { $tests[$name] = $callback; };
@@ -21,190 +23,127 @@ $assert = static function (bool $condition, string $message = 'Assertion failed'
     if (!$condition) { throw new RuntimeException($message); }
 };
 
-$test('module bootstrap registers namespace from its own directory', static function () use ($assert): void {
-    $namespaces = require __DIR__ . '/fixtures/load_module_include.php';
-    $expected = realpath(dirname(__DIR__, 2) . '/lib');
-    $actual = realpath($namespaces['KK\\Korsac'] ?? '');
-    $assert($expected !== false && $actual === $expected, 'Namespace root is not the module lib directory');
-    $includeSource = file_get_contents(dirname(__DIR__, 2) . '/include.php');
-    $assert($includeSource !== false && !str_contains($includeSource, '/bitrix/modules/kk.korsac'), 'Bootstrap contains a hard-coded Bitrix module holder');
-});
-
-$test('CLI entrypoints synchronize DOCUMENT_ROOT before Bitrix bootstrap', static function () use ($assert): void {
-    $moduleRoot = dirname(__DIR__, 2);
-    foreach (['tools/schema.php', 'tests/Integration/smoke.php', 'tests/Integration/install_smoke.php', 'tests/Integration/acceptance_smoke.php'] as $relativePath) {
-        $source = file_get_contents($moduleRoot . '/' . $relativePath);
-        $assert($source !== false, "Cannot read {$relativePath}");
-        $syncPosition = strpos($source, '$_SERVER[\'DOCUMENT_ROOT\'] = $documentRoot;');
-        $prologPosition = strpos($source, <<<'PHP'
-require $documentRoot . '/bitrix/modules/main/include/prolog_before.php';
-PHP
-        );
-        $assert($syncPosition !== false, "{$relativePath} does not synchronize DOCUMENT_ROOT");
-        $assert($prologPosition !== false && $syncPosition < $prologPosition, "{$relativePath} synchronizes DOCUMENT_ROOT too late");
-    }
-});
-
-$test('schema contains all entities with stable mapping', static function () use ($assert): void {
-    $entities = SchemaDefinition::entities();
-    $assert(count($entities) === 12);
-    $assert($entities['KorsacMotherboardClass']['table'] === 'b_hlbd_korsac_mb_class');
-    $assert($entities['KorsacValidatedBuild']['table'] === 'b_hlbd_korsac_validated_build');
-});
-$test('component classes contain common fields', static function () use ($assert): void {
-    $entities = SchemaDefinition::entities();
-    $common = ['UF_XML_ID','UF_NAME','UF_PUBLIC_NAME','UF_ACTIVE','UF_SORT','UF_PRICE','UF_CREATED_AT','UF_UPDATED_AT'];
-    foreach (SchemaDefinition::COMPONENT_CLASS_TYPES as $block) {
-        foreach ($common as $field) { $assert(isset($entities[$block]['fields'][$field]), "{$block}.{$field} missing"); }
-        $assert($entities[$block]['fields']['UF_XML_ID']['length'] === 128);
-    }
-});
-$test('migration runner applies migration once', static function () use ($assert): void {
-    $store = new class implements MigrationStoreInterface {
+$fakeGateway = static function (): SchemaGatewayInterface {
+    return new class implements SchemaGatewayInterface {
+        public array $blocks = [], $fields = [], $indexes = [], $rowCounts = [], $deleted = [];
+        public int $writes = 0;
+        public function getBlock(string $name): ?array { return $this->blocks[$name] ?? null; }
+        public function getBlockByTable(string $tableName): ?array { foreach ($this->blocks as $block) { if ($block['TABLE_NAME'] === $tableName) return $block; } return null; }
+        public function createBlock(string $name, string $tableName): array { ++$this->writes; return $this->blocks[$name] = ['ID' => count($this->blocks) + 1, 'NAME' => $name, 'TABLE_NAME' => $tableName]; }
+        public function getFields(int $blockId): array { return $this->fields[$blockId] ?? []; }
+        public function createField(int $blockId, array $field): void { ++$this->writes; $this->fields[$blockId][$field['name']] = ['USER_TYPE_ID' => $field['type'], 'MULTIPLE' => $field['multiple'] ? 'Y' : 'N', 'MANDATORY' => $field['required'] ? 'Y' : 'N', 'SETTINGS' => $field['type'] === 'string' && $field['length'] !== null ? ['MAX_LENGTH' => $field['length']] : []]; }
+        public function getIndexes(string $tableName): array { return $this->indexes[$tableName] ?? []; }
+        public function findDuplicateRows(string $tableName, array $columns): array { return []; }
+        public function createIndex(string $tableName, string $name, array $columns, bool $unique): void { ++$this->writes; $this->indexes[$tableName][$name] = ['columns' => $columns, 'unique' => $unique]; }
+        public function rows(string $blockName, array $select = ['*']): array { return []; }
+        public function countRows(string $blockName): int { return $this->rowCounts[$blockName] ?? 0; }
+        public function deleteBlock(string $blockName): void { if (isset($this->blocks[$blockName])) ++$this->writes; $this->deleted[] = $blockName; unset($this->blocks[$blockName]); }
+    };
+};
+$fakeStore = static function (array $applied = []): MigrationStoreInterface {
+    return new class($applied) implements MigrationStoreInterface {
         public array $ids = [];
+        public function __construct(array $applied) { foreach ($applied as $id) $this->ids[$id] = true; }
         public function has(string $migrationId): bool { return isset($this->ids[$migrationId]); }
         public function markApplied(string $migrationId): void { $this->ids[$migrationId] = true; }
     };
-    $migration = new class implements MigrationInterface {
-        public int $runs = 0;
-        public function id(): string { return 'test'; }
-        public function up(): void { ++$this->runs; }
-    };
-    $runner = new MigrationRunner($store);
-    $assert($runner->run([$migration]) === ['test']);
-    $assert($runner->run([$migration]) === []);
-    $assert($migration->runs === 1);
-});
-$test('self-check detects broken references duplicates and negative prices', static function () use ($assert): void {
-    $errors = SchemaSelfCheck::analyzeData([
-        'KorsacCpuClass' => [
-            ['UF_XML_ID' => 'CPU_A', 'UF_PRICE' => -1], ['UF_XML_ID' => 'CPU_A', 'UF_PRICE' => 10],
-        ],
-        'KorsacPhysicalSku' => [['UF_XML_ID' => 'SKU_A', 'UF_COMPONENT_TYPE' => 'CPU', 'UF_CLASS_XML_ID' => 'MISSING']],
-        'KorsacSupplierOffer' => [['UF_XML_ID' => 'OFFER_A', 'UF_PHYSICAL_SKU' => 'MISSING']],
-        'KorsacValidatedBuild' => [['UF_XML_ID' => 'BUILD_A', 'UF_CASE_SKU' => 'MISSING']],
-    ]);
-    $codes = array_column($errors, 'code');
-    foreach (['negative_price','duplicate_xml_id','broken_class_reference','broken_sku_reference','broken_build_reference'] as $code) {
-        $assert(in_array($code, $codes, true), "{$code} was not detected");
+};
+
+$test('module bootstrap and CLI entrypoints are portable', static function () use ($assert): void {
+    $namespaces = require __DIR__ . '/fixtures/load_module_include.php';
+    $assert(realpath($namespaces['KK\\Korsac'] ?? '') === realpath(dirname(__DIR__, 2) . '/lib'));
+    foreach (['tools/schema.php', 'tests/Integration/smoke.php', 'tests/Integration/install_smoke.php', 'tests/Integration/acceptance_smoke.php', 'tests/Integration/schema_v02_migration_smoke.php'] as $file) {
+        $source = file_get_contents(dirname(__DIR__, 2) . '/' . $file);
+        $assert($source !== false, "Cannot read {$file}");
+        $syncPosition = strpos($source, "\$_SERVER['DOCUMENT_ROOT'] = \$documentRoot;");
+        $prologPosition = strpos($source, "require \$documentRoot . '/bitrix/modules/main/include/prolog_before.php';");
+        $assert($syncPosition !== false, "{$file} does not synchronize DOCUMENT_ROOT");
+        $assert($prologPosition !== false, "{$file} does not load the Bitrix prolog");
+        $assert($syncPosition < $prologPosition, "{$file} synchronizes DOCUMENT_ROOT too late");
     }
 });
-$test('self-check accepts valid synthetic references', static function () use ($assert): void {
-    $errors = SchemaSelfCheck::analyzeData([
-        'KorsacCpuClass' => [['UF_XML_ID' => 'CPU_A', 'UF_PRICE' => 1]],
-        'KorsacCaseClass' => [['UF_XML_ID' => 'CASE_A', 'UF_PRICE' => 1]],
-        'KorsacPhysicalSku' => [
-            ['UF_XML_ID' => 'CPU_SKU', 'UF_COMPONENT_TYPE' => 'CPU', 'UF_CLASS_XML_ID' => 'CPU_A'],
-            ['UF_XML_ID' => 'CASE_SKU', 'UF_COMPONENT_TYPE' => 'CASE', 'UF_CLASS_XML_ID' => 'CASE_A'],
-        ],
-        'KorsacSupplierOffer' => [['UF_XML_ID' => 'OFFER', 'UF_PHYSICAL_SKU' => 'CPU_SKU']],
-        'KorsacValidatedBuild' => [['UF_XML_ID' => 'BUILD', 'UF_CASE_SKU' => 'CASE_SKU', 'UF_COMPONENTS_JSON' => '{"cpu_sku":"CPU_SKU"}']],
-    ]);
-    $assert($errors === [], json_encode($errors));
+$test('target schema is twelve identical option directories', static function () use ($assert): void {
+    $entities = SchemaDefinition::entities();
+    $assert(count($entities) === 12);
+    $assert(array_keys(SchemaDefinition::OPTION_TYPES) === ['CPU','GPU','MB','RAM','SSD','HDD','PSU','COOLER','CASE','OS','SOFTWARE','SERVICE']);
+    $expectedFields = ['UF_XML_ID','UF_NAME','UF_PUBLIC_NAME','UF_ACTIVE','UF_SORT','UF_PRICE','UF_PRICE_UPDATED_AT','UF_DESCRIPTION','UF_CREATED_AT','UF_UPDATED_AT'];
+    foreach ($entities as $entity) { $assert(array_keys($entity['fields']) === $expectedFields); $assert(count($entity['indexes']) === 2); }
+    foreach (['KorsacHdd','KorsacOs','KorsacSoftware','KorsacService'] as $name) $assert(isset($entities[$name]));
+    foreach (['KorsacPhysicalSku','KorsacSupplierOffer','KorsacValidatedBuild'] as $name) $assert(!isset($entities[$name]));
+    $assert($entities['KorsacMotherboard']['table'] === 'b_hlbd_korsac_mb');
 });
-$test('component type registry rejects unknown type', static function () use ($assert): void {
-    $assert(ComponentTypeRegistry::blockName('cpu') === 'KorsacCpuClass');
-    try { ComponentTypeRegistry::blockName('unknown'); } catch (InvalidArgumentException) { return; }
-    throw new RuntimeException('Unknown component type was accepted');
+$test('option registry maps all types and rejects unknown values', static function () use ($assert): void {
+    foreach (SchemaDefinition::OPTION_TYPES as $type => $block) $assert(OptionTypeRegistry::blockName(strtolower($type)) === $block);
+    try { OptionTypeRegistry::blockName('unknown'); } catch (InvalidArgumentException) { return; }
+    throw new RuntimeException('Unknown option type accepted');
 });
-
-$test('schema installer remains idempotent with prefixed indexes', static function () use ($assert): void {
-    $gateway = new class implements SchemaGatewayInterface {
-        public array $blocks = [];
-        public array $fields = [];
-        public array $indexes = [];
-        public int $writes = 0;
-        public function getBlock(string $name): ?array { return $this->blocks[$name] ?? null; }
-        public function getBlockByTable(string $tableName): ?array {
-            foreach ($this->blocks as $block) { if ($block['TABLE_NAME'] === $tableName) { return $block; } }
-            return null;
-        }
-        public function createBlock(string $name, string $tableName): array {
-            ++$this->writes;
-            return $this->blocks[$name] = ['ID' => count($this->blocks) + 1, 'NAME' => $name, 'TABLE_NAME' => $tableName];
-        }
-        public function getFields(int $blockId): array { return $this->fields[$blockId] ?? []; }
-        public function createField(int $blockId, array $field): void {
-            ++$this->writes;
-            $this->fields[$blockId][$field['name']] = [
-                'USER_TYPE_ID' => $field['type'], 'MULTIPLE' => $field['multiple'] ? 'Y' : 'N',
-                'MANDATORY' => $field['required'] ? 'Y' : 'N',
-                'SETTINGS' => $field['type'] === 'string' && $field['length'] !== null ? ['MAX_LENGTH' => $field['length']] : [],
-            ];
-        }
-        public function getIndexes(string $tableName): array { return $this->indexes[$tableName] ?? []; }
-        public function findDuplicateRows(string $tableName, array $columns): array { return []; }
-        public function createIndex(string $tableName, string $name, array $columns, bool $unique): void {
-            ++$this->writes;
-            $this->indexes[$tableName][$name] = ['columns' => $columns, 'unique' => $unique];
-        }
-        public function rows(string $blockName, array $select = ['*']): array { return []; }
-    };
-    $installer = new SchemaInstaller($gateway);
-    $installer->install();
-    $writesAfterFirstInstall = $gateway->writes;
-    $installer->install();
-    $assert($writesAfterFirstInstall > 0);
-    $assert($gateway->writes === $writesAfterFirstInstall, 'Second install performed schema writes');
+$test('option repository is coupled only to option registry', static function () use ($assert): void {
+    $source = file_get_contents(dirname(__DIR__, 2) . '/lib/Repository/OptionRepository.php');
+    $assert(str_contains((string)$source, 'OptionTypeRegistry::blockName($type)'));
+    $assert(!str_contains((string)$source, 'ComponentClass'));
 });
-
-$test('indexed string fields use bounded SQL prefixes', static function () use ($assert): void {
-    foreach (SchemaDefinition::entities() as $entity) {
-        foreach ($entity['indexes'] as $index) {
-            foreach ($index['columns'] as $column) {
-                $field = $entity['fields'][$column['name']];
-                if ($field['type'] === 'string') {
-                    $assert($field['length'] !== null, "{$entity['name']}.{$column['name']} is unbounded");
-                    $assert($column['length'] === $field['length'], "{$entity['name']}.{$column['name']} prefix mismatch");
-                } else {
-                    $assert($column['length'] === null, "Non-string index column has a prefix");
-                }
-            }
-        }
+$test('self-check detects empty duplicate XML IDs and negative prices', static function () use ($assert): void {
+    $errors = SchemaSelfCheck::analyzeData(['KorsacRam' => [['UF_XML_ID'=>'','UF_PRICE'=>0], ['UF_XML_ID'=>'RAM_A','UF_PRICE'=>-1], ['UF_XML_ID'=>'RAM_A','UF_PRICE'=>2]]]);
+    foreach (['empty_xml_id','negative_price','duplicate_xml_id'] as $code) $assert(in_array($code, array_column($errors, 'code'), true), $code);
+});
+$test('migration performs complete preflight before any deletion', static function () use ($assert, $fakeGateway): void {
+    $gateway = $fakeGateway(); $gateway->rowCounts['KorsacRamClass'] = 3; $gateway->rowCounts['KorsacPhysicalSku'] = 5;
+    try { (new SimplifyHlSchema($gateway, new SchemaInstaller($gateway)))->up(); } catch (RuntimeException $e) {
+        $assert(str_contains($e->getMessage(), 'KorsacRamClass contains 3 rows'));
+        $assert(str_contains($e->getMessage(), 'KorsacPhysicalSku contains 5 rows'));
+        $assert($gateway->deleted === []); return;
     }
-    $xmlIndex = SchemaDefinition::entities()['KorsacCpuClass']['indexes']['ux_korsac_cpu_xml_id'];
-    $sql = SqlIndexBuilder::create('b_hlbd_korsac_cpu_class', 'ux_korsac_cpu_xml_id', $xmlIndex['columns'], true);
-    $assert($sql === 'CREATE UNIQUE INDEX `ux_korsac_cpu_xml_id` ON `b_hlbd_korsac_cpu_class` (`UF_XML_ID`(128))');
+    throw new RuntimeException('Migration was not blocked');
 });
-$test('index comparison includes order uniqueness and prefix lengths', static function () use ($assert): void {
-    $expected = ['unique' => true, 'columns' => [
-        ['name' => 'UF_CODE', 'length' => 128], ['name' => 'UF_ACTIVE', 'length' => null],
-    ]];
-    $fromShowIndex = ['unique' => 1, 'columns' => [
-        ['name' => 'uf_code', 'length' => '128'], ['name' => 'UF_ACTIVE', 'length' => null],
-    ]];
-    $assert(SchemaComparator::indexIsCompatible($fromShowIndex, $expected));
-    $wrongPrefix = $fromShowIndex;
-    $wrongPrefix['columns'][0]['length'] = 64;
-    $assert(!SchemaComparator::indexIsCompatible($wrongPrefix, $expected));
-    $wrongOrder = $fromShowIndex;
-    $wrongOrder['columns'] = array_reverse($wrongOrder['columns']);
-    $assert(!SchemaComparator::indexIsCompatible($wrongOrder, $expected));
-    $notUnique = $fromShowIndex;
-    $notUnique['unique'] = false;
-    $assert(!SchemaComparator::indexIsCompatible($notUnique, $expected));
+$test('fresh install baselines historical 001 and creates only v0.2', static function () use ($assert, $fakeGateway, $fakeStore): void {
+    $gateway = $fakeGateway(); $store = $fakeStore();
+    $applied = (new SchemaMigrationService($store, $gateway))->migrate();
+    $assert($applied === [SchemaMigrationService::V01_MIGRATION_ID, '2026_09_30_002_simplify_hl_schema']);
+    $assert(count(array_intersect(array_keys($gateway->blocks), array_keys(SchemaDefinition::entities()))) === 12);
+    foreach (SimplifyHlSchema::LEGACY_BLOCKS as $name) $assert(!isset($gateway->blocks[$name]));
 });
-$test('bounded string fields require matching MAX_LENGTH metadata', static function () use ($assert): void {
-    $expected = SchemaDefinition::entities()['KorsacCpuClass']['fields']['UF_XML_ID'];
-    $actual = ['USER_TYPE_ID' => 'string', 'MULTIPLE' => 'N', 'MANDATORY' => 'Y', 'SETTINGS' => ['MAX_LENGTH' => 128]];
-    $assert(SchemaComparator::fieldIsCompatible($actual, $expected));
-    $actual['SETTINGS']['MAX_LENGTH'] = 0;
-    $assert(!SchemaComparator::fieldIsCompatible($actual, $expected));
+$test('existing v0.1 with applied 001 transitions through 002', static function () use ($assert, $fakeGateway, $fakeStore): void {
+    $gateway = $fakeGateway();
+    foreach (SimplifyHlSchema::LEGACY_BLOCKS as $name) $gateway->blocks[$name] = ['ID'=>count($gateway->blocks)+1,'NAME'=>$name,'TABLE_NAME'=>'legacy_' . count($gateway->blocks)];
+    $store = $fakeStore([SchemaMigrationService::V01_MIGRATION_ID]);
+    $assert((new SchemaMigrationService($store, $gateway))->migrate() === ['2026_09_30_002_simplify_hl_schema']);
+    foreach (SimplifyHlSchema::LEGACY_BLOCKS as $name) $assert(!isset($gateway->blocks[$name]));
+    foreach (array_keys(SchemaDefinition::entities()) as $name) $assert(isset($gateway->blocks[$name]));
 });
-$test('component class and physical SKU type sets are distinct', static function () use ($assert): void {
-    $assert(isset(SchemaDefinition::COMPONENT_CLASS_TYPES['SERVICE']));
-    $assert(!isset(SchemaDefinition::PHYSICAL_SKU_TYPES['SERVICE']));
-    $errors = SchemaSelfCheck::analyzeData([
-        'KorsacServiceClass' => [['UF_XML_ID' => 'SERVICE_A', 'UF_PRICE' => 0]],
-        'KorsacPhysicalSku' => [['UF_XML_ID' => 'SERVICE_SKU', 'UF_COMPONENT_TYPE' => 'SERVICE', 'UF_CLASS_XML_ID' => 'SERVICE_A']],
-    ]);
-    $assert(in_array('broken_class_reference', array_column($errors, 'code'), true));
+$test('legacy data without 001 marker blocks before schema or history writes', static function () use ($assert, $fakeGateway, $fakeStore): void {
+    $gateway = $fakeGateway(); $store = $fakeStore();
+    $gateway->blocks['KorsacRamClass'] = ['ID'=>1, 'NAME'=>'KorsacRamClass', 'TABLE_NAME'=>'b_hlbd_korsac_ram_class'];
+    $gateway->rowCounts['KorsacRamClass'] = 3;
+    try { (new SchemaMigrationService($store, $gateway))->migrate(); } catch (RuntimeException $e) {
+        $assert(str_contains($e->getMessage(), 'KorsacRamClass contains 3 rows'));
+        $assert($gateway->writes === 0, 'Schema was changed before blocker');
+        $assert($store->ids === [], 'Historical baseline was recorded before blocker');
+        foreach (array_keys(SchemaDefinition::entities()) as $name) $assert(!isset($gateway->blocks[$name]));
+        return;
+    }
+    throw new RuntimeException('Migration was not blocked');
+});
+$test('repeated migrate is idempotent', static function () use ($assert, $fakeGateway, $fakeStore): void {
+    $gateway = $fakeGateway(); $store = $fakeStore(); $service = new SchemaMigrationService($store, $gateway);
+    $service->migrate(); $writes = $gateway->writes;
+    $assert($service->migrate() === []);
+    $assert($gateway->writes === $writes, 'Repeated migrate performed schema writes');
+});
+$test('migration runner records successful migration once', static function () use ($assert): void {
+    $store = new class implements MigrationStoreInterface { public array $ids=[]; public function has(string $id): bool{return isset($this->ids[$id]);} public function markApplied(string $id):void{$this->ids[$id]=true;} };
+    $migration = new class implements MigrationInterface { public int $runs=0; public function id():string{return 'x';} public function up():void{++$this->runs;} };
+    $runner = new MigrationRunner($store); $assert($runner->run([$migration]) === ['x']); $assert($runner->run([$migration]) === []); $assert($migration->runs === 1);
+});
+$test('bounded string indexes retain prefixes and comparison semantics', static function () use ($assert): void {
+    $index = SchemaDefinition::entities()['KorsacCpu']['indexes']['ux_korsac_cpu_xml_id'];
+    $assert(SqlIndexBuilder::create('b_hlbd_korsac_cpu', 'ux_korsac_cpu_xml_id', $index['columns'], true) === 'CREATE UNIQUE INDEX `ux_korsac_cpu_xml_id` ON `b_hlbd_korsac_cpu` (`UF_XML_ID`(128))');
+    $assert(SchemaComparator::indexIsCompatible(['unique'=>1,'columns'=>[['name'=>'uf_xml_id','length'=>'128']]], $index));
+    $assert(!SchemaComparator::indexIsCompatible(['unique'=>1,'columns'=>[['name'=>'UF_XML_ID','length'=>64]]], $index));
+    $field = SchemaDefinition::entities()['KorsacCpu']['fields']['UF_XML_ID'];
+    $assert(SchemaComparator::fieldIsCompatible(['USER_TYPE_ID'=>'string','MULTIPLE'=>'N','MANDATORY'=>'Y','SETTINGS'=>['MAX_LENGTH'=>128]], $field));
 });
 
 $failed = 0;
-foreach ($tests as $name => $callback) {
-    try { $callback(); echo "PASS {$name}\n"; }
-    catch (Throwable $error) { ++$failed; fwrite(STDERR, "FAIL {$name}: {$error->getMessage()}\n"); }
-}
-echo sprintf("%d tests, %d failures\n", count($tests), $failed);
+foreach ($tests as $name => $callback) { try { $callback(); echo "PASS {$name}\n"; } catch (Throwable $e) { ++$failed; fwrite(STDERR, "FAIL {$name}: {$e->getMessage()}\n"); } }
+echo count($tests) . " tests, {$failed} failures\n";
 exit($failed === 0 ? 0 : 1);

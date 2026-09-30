@@ -5,10 +5,8 @@ declare(strict_types=1);
 use Bitrix\Main\Loader;
 use KK\Korsac\Health\SchemaSelfCheck;
 use KK\Korsac\Install\BitrixSchemaGateway;
-use KK\Korsac\Install\Migration\InitialHlSchema;
-use KK\Korsac\Install\MigrationRunner;
 use KK\Korsac\Install\OptionMigrationStore;
-use KK\Korsac\Install\SchemaInstaller;
+use KK\Korsac\Install\SchemaMigrationService;
 
 $documentRoot = ($_SERVER['DOCUMENT_ROOT'] ?? '') ?: dirname(__DIR__, 4);
 $_SERVER['DOCUMENT_ROOT'] = $documentRoot;
@@ -19,8 +17,7 @@ if (!Loader::includeModule('highloadblock') || !Loader::includeModule('kk.korsac
 $gateway = new BitrixSchemaGateway();
 $command = $argv[1] ?? 'check';
 if ($command === 'migrate') {
-    $applied = (new MigrationRunner(new OptionMigrationStore()))
-        ->run([new InitialHlSchema(new SchemaInstaller($gateway))]);
+    $applied = (new SchemaMigrationService(new OptionMigrationStore(), $gateway))->migrate();
     echo json_encode(['applied' => $applied], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), PHP_EOL;
     exit(0);
 }

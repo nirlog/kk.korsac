@@ -131,4 +131,32 @@ final class BitrixSchemaGateway implements SchemaGatewayInterface
         $dataClass = HighloadBlockTable::compileEntity($block)->getDataClass();
         return $dataClass::getList(['select' => $select])->fetchAll();
     }
+
+    public function countRows(string $blockName): int
+    {
+        $block = $this->getBlock($blockName);
+        if ($block === null) {
+            return 0;
+        }
+        $dataClass = HighloadBlockTable::compileEntity($block)->getDataClass();
+        return (int)$dataClass::getCount();
+    }
+
+    public function deleteBlock(string $blockName): void
+    {
+        $block = $this->getBlock($blockName);
+        if ($block === null) {
+            return;
+        }
+        $tableName = (string)$block['TABLE_NAME'];
+        SqlIndexBuilder::assertIdentifier($tableName);
+        $result = HighloadBlockTable::delete((int)$block['ID']);
+        if (!$result->isSuccess()) {
+            throw new SystemException("Cannot delete {$blockName}: " . implode('; ', $result->getErrorMessages()));
+        }
+        $connection = Application::getConnection();
+        if ($connection->isTableExists($tableName)) {
+            $connection->dropTable($tableName);
+        }
+    }
 }
