@@ -31,7 +31,7 @@ final class SchemaDefinition
             ['UF_PUBLIC_NAME', 'string', true, null, false, 255],
             ['UF_ACTIVE', 'boolean', true, 1],
             ['UF_SORT', 'integer', true, 500],
-            ['UF_PRICE', 'double', true, 0.0],
+            ['UF_PRICE', 'double', true, 0.0, false, null, 2],
             ['UF_PRICE_UPDATED_AT', 'datetime'],
             ['UF_DESCRIPTION', 'string'],
             ['UF_CREATED_AT', 'datetime', true, 'now'],
@@ -55,9 +55,10 @@ final class SchemaDefinition
     {
         $fields = [];
         foreach ($definitions as $definition) {
-            [$name, $type, $required, $default, $multiple, $length] = array_pad($definition, 6, null);
+            [$name, $type, $required, $default, $multiple, $length, $precision] = array_pad($definition, 7, null);
             $fields[$name] = ['name' => $name, 'type' => $type, 'required' => (bool)$required,
-                'default' => $default, 'multiple' => (bool)$multiple, 'length' => $length];
+                'default' => $default, 'multiple' => (bool)$multiple, 'length' => $length,
+                'precision' => $precision];
         }
         return $fields;
     }

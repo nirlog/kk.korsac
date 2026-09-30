@@ -4,11 +4,11 @@
 
 ## Schema
 
-Создаются 12 HL: `KorsacCpu`, `KorsacGpu`, `KorsacMotherboard`, `KorsacRam`, `KorsacSsd`, `KorsacHdd`, `KorsacPsu`, `KorsacCooler`, `KorsacCase`, `KorsacOs`, `KorsacSoftware`, `KorsacService`. Все имеют один набор из 10 общих полей и индексы `UNIQUE(UF_XML_ID)` и `INDEX(UF_ACTIVE, UF_SORT)`. `UF_PRICE` — абсолютная цена варианта.
+Создаются 12 HL: `KorsacCpu`, `KorsacGpu`, `KorsacMotherboard`, `KorsacRam`, `KorsacSsd`, `KorsacHdd`, `KorsacPsu`, `KorsacCooler`, `KorsacCase`, `KorsacOs`, `KorsacSoftware`, `KorsacService`. Все имеют один набор из 10 общих полей и индексы `UNIQUE(UF_XML_ID)` и `INDEX(UF_ACTIVE, UF_SORT)`. `UF_PRICE` — абсолютная цена варианта с `PRECISION=2`.
 
 ## Migration
 
-История хранится в Bitrix `Option` (`kk.korsac/applied_migrations`). ID PR1 сохранён и никогда не запускается с v0.2 definition. На fresh install 001 отмечается как explicit historical baseline только после read-only preflight; существующая v0.1 установка сохраняет уже применённую 001. Migration `2026_09_30_002_simplify_hl_schema` подсчитывает строки во всех legacy blocks до baseline/schema writes. Любые данные блокируют migration с диагностикой всех непустых блоков. Только после успешного полного preflight удаляются пустые legacy HL и создаётся v0.2. Повторные запуски безопасны:
+История хранится в Bitrix `Option` (`kk.korsac/applied_migrations`). ID PR1 сохранён и никогда не запускается с v0.2 definition. На fresh install 001 отмечается как explicit historical baseline только после read-only preflight; существующая v0.1 установка сохраняет уже применённую 001. Migration `2026_09_30_002_simplify_hl_schema` подсчитывает строки во всех legacy blocks до baseline/schema writes. Любые данные блокируют migration с диагностикой всех непустых блоков. Только после успешного полного preflight удаляются пустые legacy HL и создаётся v0.2. Следующая migration `2026_09_30_003_price_precision` без пересоздания полей сохраняет их настройки и обеспечивает `UF_PRICE.PRECISION=2` во всех 12 HL. Повторные запуски безопасны:
 
 ```bash
 php local/modules/kk.korsac/tools/schema.php migrate

@@ -50,6 +50,9 @@ final class BitrixSchemaGateway implements SchemaGatewayInterface
             $settings['MAX_LENGTH'] = (int)$field['length'];
             $settings['SIZE'] = min((int)$field['length'], 60);
         }
+        if ($field['type'] === 'double' && $field['precision'] !== null) {
+            $settings['PRECISION'] = (int)$field['precision'];
+        }
         if ($default !== null) {
             $settings['DEFAULT_VALUE'] = $default;
         }
@@ -68,6 +71,16 @@ final class BitrixSchemaGateway implements SchemaGatewayInterface
             global $APPLICATION;
             $error = $APPLICATION?->GetException()?->GetString() ?? 'unknown error';
             throw new SystemException("Cannot create {$field['name']}: {$error}");
+        }
+    }
+
+    public function updateFieldSettings(int $fieldId, array $settings): void
+    {
+        $updated = (new CUserTypeEntity())->Update($fieldId, ['SETTINGS' => $settings]);
+        if (!$updated) {
+            global $APPLICATION;
+            $error = $APPLICATION?->GetException()?->GetString() ?? 'unknown error';
+            throw new SystemException("Cannot update user field {$fieldId}: {$error}");
         }
     }
 

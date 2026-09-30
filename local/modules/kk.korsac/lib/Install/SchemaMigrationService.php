@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace KK\Korsac\Install;
 
 use KK\Korsac\Install\Migration\SimplifyHlSchema;
+use KK\Korsac\Install\Migration\PricePrecision;
 
 /** Coordinates the one-time v0.1 history baseline with the v0.2 migration. */
 final class SchemaMigrationService
@@ -31,6 +32,9 @@ final class SchemaMigrationService
             $applied[] = self::V01_MIGRATION_ID;
         }
 
-        return array_merge($applied, (new MigrationRunner($this->store))->run([$migration]));
+        return array_merge($applied, (new MigrationRunner($this->store))->run([
+            $migration,
+            new PricePrecision($this->gateway),
+        ]));
     }
 }

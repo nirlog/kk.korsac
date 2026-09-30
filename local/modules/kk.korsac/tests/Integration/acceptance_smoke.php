@@ -35,14 +35,14 @@ try {
         $classes[$key] = $class;
         $xmlId = $prefix . '_' . strtoupper($key);
         $now = new DateTime();
-        $result = $class::add(['UF_XML_ID'=>$xmlId, 'UF_NAME'=>"Acceptance {$type}", 'UF_PUBLIC_NAME'=>"Acceptance {$type}", 'UF_ACTIVE'=>1, 'UF_SORT'=>500, 'UF_PRICE'=>1234.50, 'UF_CREATED_AT'=>$now, 'UF_UPDATED_AT'=>$now]);
+        $result = $class::add(['UF_XML_ID'=>$xmlId, 'UF_NAME'=>"Acceptance {$type}", 'UF_PUBLIC_NAME'=>"Acceptance {$type}", 'UF_ACTIVE'=>1, 'UF_SORT'=>500, 'UF_PRICE'=>1234.56, 'UF_CREATED_AT'=>$now, 'UF_UPDATED_AT'=>$now]);
         if (!$result->isSuccess()) throw new RuntimeException("Cannot create {$blockName}: " . implode('; ', $result->getErrorMessages()));
         $created[$key] = ['id'=>(int)$result->getId(), 'xmlId'=>$xmlId]; $output['created'][$key] = 1;
     }
     $repository = new OptionRepository();
     foreach ($types as $key => $type) {
         $row = $repository->findByTypeAndXmlId($type, $created[$key]['xmlId']);
-        if ($row === null || (float)$row['UF_PRICE'] !== 1234.5) throw new RuntimeException("Repository/price check failed for {$type}");
+        if ($row === null || (int)round((float)$row['UF_PRICE'] * 100) !== 123456) throw new RuntimeException("Repository/price check failed for {$type}");
     }
     $output['checks']['repositoryRead'] = true;
     $withFixtures = (new SchemaSelfCheck($gateway))->run();
