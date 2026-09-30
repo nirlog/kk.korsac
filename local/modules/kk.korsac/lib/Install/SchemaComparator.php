@@ -13,14 +13,20 @@ final class SchemaComparator
             || ($actual['MANDATORY'] ?? 'N') !== ($expected['required'] ? 'Y' : 'N')) {
             return false;
         }
-        if ($expected['type'] !== 'string' || $expected['length'] === null) {
-            return true;
-        }
         $settings = $actual['SETTINGS'] ?? [];
         if (is_string($settings)) {
             $settings = unserialize($settings, ['allowed_classes' => false]);
         }
-        return is_array($settings) && (int)($settings['MAX_LENGTH'] ?? 0) === $expected['length'];
+        if ($expected['type'] === 'string' && $expected['length'] !== null
+            && (!is_array($settings) || (int)($settings['MAX_LENGTH'] ?? 0) !== $expected['length'])) {
+            return false;
+        }
+        if ($expected['type'] === 'double' && $expected['precision'] !== null
+            && (!is_array($settings) || !array_key_exists('PRECISION', $settings)
+                || (int)$settings['PRECISION'] !== $expected['precision'])) {
+            return false;
+        }
+        return true;
     }
 
     public static function indexIsCompatible(array $actual, array $expected): bool

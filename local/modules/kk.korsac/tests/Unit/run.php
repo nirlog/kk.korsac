@@ -6,6 +6,7 @@ require dirname(__DIR__) . '/bootstrap.php';
 
 use KK\Korsac\Health\SchemaSelfCheck;
 use KK\Korsac\Install\Migration\SimplifyHlSchema;
+use KK\Korsac\Install\Migration\PricePrecision;
 use KK\Korsac\Install\MigrationInterface;
 use KK\Korsac\Install\MigrationRunner;
 use KK\Korsac\Install\MigrationStoreInterface;
@@ -25,13 +26,14 @@ $assert = static function (bool $condition, string $message = 'Assertion failed'
 
 $fakeGateway = static function (): SchemaGatewayInterface {
     return new class implements SchemaGatewayInterface {
-        public array $blocks = [], $fields = [], $indexes = [], $rowCounts = [], $deleted = [];
+        public array $blocks = [], $fields = [], $indexes = [], $rowCounts = [], $deleted = [], $fieldUpdates = [];
         public int $writes = 0;
         public function getBlock(string $name): ?array { return $this->blocks[$name] ?? null; }
         public function getBlockByTable(string $tableName): ?array { foreach ($this->blocks as $block) { if ($block['TABLE_NAME'] === $tableName) return $block; } return null; }
         public function createBlock(string $name, string $tableName): array { ++$this->writes; return $this->blocks[$name] = ['ID' => count($this->blocks) + 1, 'NAME' => $name, 'TABLE_NAME' => $tableName]; }
         public function getFields(int $blockId): array { return $this->fields[$blockId] ?? []; }
-        public function createField(int $blockId, array $field): void { ++$this->writes; $this->fields[$blockId][$field['name']] = ['USER_TYPE_ID' => $field['type'], 'MULTIPLE' => $field['multiple'] ? 'Y' : 'N', 'MANDATORY' => $field['required'] ? 'Y' : 'N', 'SETTINGS' => $field['type'] === 'string' && $field['length'] !== null ? ['MAX_LENGTH' => $field['length']] : []]; }
+        public function createField(int $blockId, array $field): void { ++$this->writes; $settings = []; if ($field['type'] === 'string' && $field['length'] !== null) $settings['MAX_LENGTH'] = $field['length']; if ($field['type'] === 'double' && $field['precision'] !== null) $settings['PRECISION'] = $field['precision']; $this->fields[$blockId][$field['name']] = ['ID' => $blockId * 100 + count($this->fields[$blockId] ?? []), 'USER_TYPE_ID' => $field['type'], 'MULTIPLE' => $field['multiple'] ? 'Y' : 'N', 'MANDATORY' => $field['required'] ? 'Y' : 'N', 'SETTINGS' => $settings]; }
+        public function updateFieldSettings(int $fieldId, array $settings): void { ++$this->writes; $this->fieldUpdates[] = $fieldId; foreach ($this->fields as &$fields) foreach ($fields as &$field) if (($field['ID'] ?? null) === $fieldId) $field['SETTINGS'] = $settings; }
         public function getIndexes(string $tableName): array { return $this->indexes[$tableName] ?? []; }
         public function findDuplicateRows(string $tableName, array $columns): array { return []; }
         public function createIndex(string $tableName, string $name, array $columns, bool $unique): void { ++$this->writes; $this->indexes[$tableName][$name] = ['columns' => $columns, 'unique' => $unique]; }
@@ -71,6 +73,14 @@ $test('target schema is twelve identical option directories', static function ()
     foreach (['KorsacHdd','KorsacOs','KorsacSoftware','KorsacService'] as $name) $assert(isset($entities[$name]));
     foreach (['KorsacPhysicalSku','KorsacSupplierOffer','KorsacValidatedBuild'] as $name) $assert(!isset($entities[$name]));
     $assert($entities['KorsacMotherboard']['table'] === 'b_hlbd_korsac_mb');
+    $assert($entities['KorsacCpu']['fields']['UF_PRICE']['precision'] === 2);
+});
+$test('double field comparator requires expected precision', static function () use ($assert): void {
+    $field = SchemaDefinition::entities()['KorsacCpu']['fields']['UF_PRICE'];
+    $base = ['USER_TYPE_ID'=>'double', 'MULTIPLE'=>'N', 'MANDATORY'=>'Y'];
+    $assert(SchemaComparator::fieldIsCompatible($base + ['SETTINGS'=>['PRECISION'=>2]], $field));
+    $assert(!SchemaComparator::fieldIsCompatible($base + ['SETTINGS'=>['PRECISION'=>0]], $field));
+    $assert(!SchemaComparator::fieldIsCompatible($base + ['SETTINGS'=>[]], $field));
 });
 $test('option registry maps all types and rejects unknown values', static function () use ($assert): void {
     foreach (SchemaDefinition::OPTION_TYPES as $type => $block) $assert(OptionTypeRegistry::blockName(strtolower($type)) === $block);
@@ -98,7 +108,7 @@ $test('migration performs complete preflight before any deletion', static functi
 $test('fresh install baselines historical 001 and creates only v0.2', static function () use ($assert, $fakeGateway, $fakeStore): void {
     $gateway = $fakeGateway(); $store = $fakeStore();
     $applied = (new SchemaMigrationService($store, $gateway))->migrate();
-    $assert($applied === [SchemaMigrationService::V01_MIGRATION_ID, '2026_09_30_002_simplify_hl_schema']);
+    $assert($applied === [SchemaMigrationService::V01_MIGRATION_ID, '2026_09_30_002_simplify_hl_schema', '2026_09_30_003_price_precision']);
     $assert(count(array_intersect(array_keys($gateway->blocks), array_keys(SchemaDefinition::entities()))) === 12);
     foreach (SimplifyHlSchema::LEGACY_BLOCKS as $name) $assert(!isset($gateway->blocks[$name]));
 });
@@ -106,9 +116,26 @@ $test('existing v0.1 with applied 001 transitions through 002', static function 
     $gateway = $fakeGateway();
     foreach (SimplifyHlSchema::LEGACY_BLOCKS as $name) $gateway->blocks[$name] = ['ID'=>count($gateway->blocks)+1,'NAME'=>$name,'TABLE_NAME'=>'legacy_' . count($gateway->blocks)];
     $store = $fakeStore([SchemaMigrationService::V01_MIGRATION_ID]);
-    $assert((new SchemaMigrationService($store, $gateway))->migrate() === ['2026_09_30_002_simplify_hl_schema']);
+    $assert((new SchemaMigrationService($store, $gateway))->migrate() === ['2026_09_30_002_simplify_hl_schema', '2026_09_30_003_price_precision']);
     foreach (SimplifyHlSchema::LEGACY_BLOCKS as $name) $assert(!isset($gateway->blocks[$name]));
     foreach (array_keys(SchemaDefinition::entities()) as $name) $assert(isset($gateway->blocks[$name]));
+});
+$test('price precision migration updates all option fields and is idempotent', static function () use ($assert, $fakeGateway): void {
+    $gateway = $fakeGateway();
+    (new SchemaInstaller($gateway))->install();
+    foreach ($gateway->fields as &$fields) {
+        $fields['UF_PRICE']['SETTINGS'] = ['PRECISION'=>0, 'EXISTING_SETTING'=>'preserved'];
+    }
+    $migration = new PricePrecision($gateway);
+    $migration->up();
+    $assert(count($gateway->fieldUpdates) === 12);
+    foreach ($gateway->fields as $fields) {
+        $assert($fields['UF_PRICE']['SETTINGS']['PRECISION'] === 2);
+        $assert($fields['UF_PRICE']['SETTINGS']['EXISTING_SETTING'] === 'preserved');
+    }
+    $writes = $gateway->writes;
+    $migration->up();
+    $assert($gateway->writes === $writes);
 });
 $test('legacy data without 001 marker blocks before schema or history writes', static function () use ($assert, $fakeGateway, $fakeStore): void {
     $gateway = $fakeGateway(); $store = $fakeStore();

@@ -12,6 +12,7 @@ interface SchemaGatewayInterface
     /** @return array<string, array> */
     public function getFields(int $blockId): array;
     public function createField(int $blockId, array $field): void;
+    public function updateFieldSettings(int $fieldId, array $settings): void;
     /** @return array<string, array{unique: bool, columns: list<array{name:string,length:?int}>}> */
     public function getIndexes(string $tableName): array;
     public function findDuplicateRows(string $tableName, array $columns): array;

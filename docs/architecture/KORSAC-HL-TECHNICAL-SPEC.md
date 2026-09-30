@@ -42,7 +42,7 @@ KORSAC OPTION HL
 | `UF_PUBLIC_NAME` | string(255) | Y | — | название для покупателя |
 | `UF_ACTIVE` | boolean | Y | `1` | доступность для новых конфигураций |
 | `UF_SORT` | integer | Y | `500` | порядок вывода |
-| `UF_PRICE` | double | Y | `0.00` | абсолютная цена |
+| `UF_PRICE` | double, precision 2 | Y | `0.00` | абсолютная цена |
 | `UF_PRICE_UPDATED_AT` | datetime | N | NULL | время обновления цены |
 | `UF_DESCRIPTION` | string/text | N | NULL | описание |
 | `UF_CREATED_AT` | datetime | Y | now | создание |
@@ -68,6 +68,8 @@ Single-choice определяется парой `<PREFIX>_DEFAULT` и `<PREFIX
 ## 6. Установка и migration
 
 Migration history остаётся последовательной: существующий ID `2026_09_29_001_initial_hl_schema` не исполняется с новой schema и не переиспользуется. На fresh install он записывается как explicit historical baseline только после успешного read-only preflight, затем выполняется `2026_09_30_002_simplify_hl_schema`. На существующей v0.1 установке уже применённая 001 остаётся без изменений, и runner выполняет только 002. Перед baseline и перед любым удалением migration получает row count **всех** 12 legacy HL-блоков. Если хотя бы один непуст, операция завершается исключением со всеми найденными count до записи baseline и до первого schema write. Пустая legacy schema удаляется, после чего idempotent installer создаёт target schema.
+
+Migration `2026_09_30_003_price_precision` выполняется после 002 и обеспечивает `SETTINGS['PRECISION']=2` у `UF_PRICE` во всех 12 target HL. Она обновляет существующее user field на месте, сохраняет остальные settings и данные и повторно выполняется как no-op. На fresh install поле сразу создаётся с требуемой precision; 003 остаётся безопасной ensure-операцией.
 
 Обычный uninstall сохраняет HL schema и данные. Удаление legacy schema — единственная destructive операция v0.2 и разрешено только после полного preflight.
 
