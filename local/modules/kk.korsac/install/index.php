@@ -5,11 +5,8 @@ declare(strict_types=1);
 use Bitrix\Main\Loader;
 use Bitrix\Main\ModuleManager;
 use KK\Korsac\Install\BitrixSchemaGateway;
-use KK\Korsac\Install\Migration\InitialHlSchema;
-use KK\Korsac\Install\Migration\SimplifyHlSchema;
-use KK\Korsac\Install\MigrationRunner;
 use KK\Korsac\Install\OptionMigrationStore;
-use KK\Korsac\Install\SchemaInstaller;
+use KK\Korsac\Install\SchemaMigrationService;
 
 class kk_korsac extends CModule
 {
@@ -49,13 +46,8 @@ class kk_korsac extends CModule
                 }
             }
 
-            $runner = new MigrationRunner(new OptionMigrationStore());
             $gateway = new BitrixSchemaGateway();
-            $installer = new SchemaInstaller($gateway);
-            $runner->run([
-                new InitialHlSchema($installer),
-                new SimplifyHlSchema($gateway, $installer),
-            ]);
+            (new SchemaMigrationService(new OptionMigrationStore(), $gateway))->migrate();
         } catch (Throwable $exception) {
             if ($registeredHere) {
                 UnRegisterModule($this->MODULE_ID);

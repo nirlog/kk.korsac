@@ -26,6 +26,16 @@ final class SimplifyHlSchema implements MigrationInterface
 
     public function up(): void
     {
+        $this->assertSafeToMigrate();
+        foreach (self::LEGACY_BLOCKS as $blockName) {
+            $this->gateway->deleteBlock($blockName);
+        }
+        $this->installer->install();
+    }
+
+    /** Perform the complete read-only preflight before any schema operation. */
+    public function assertSafeToMigrate(): void
+    {
         $occupied = [];
         foreach (self::LEGACY_BLOCKS as $blockName) {
             $count = $this->gateway->countRows($blockName);
@@ -40,9 +50,5 @@ final class SimplifyHlSchema implements MigrationInterface
             }
             throw new RuntimeException(implode("\n", $lines));
         }
-        foreach (self::LEGACY_BLOCKS as $blockName) {
-            $this->gateway->deleteBlock($blockName);
-        }
-        $this->installer->install();
     }
 }

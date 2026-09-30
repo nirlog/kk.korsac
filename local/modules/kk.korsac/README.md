@@ -8,7 +8,7 @@
 
 ## Migration
 
-История хранится в Bitrix `Option` (`kk.korsac/applied_migrations`). ID PR1 сохранён; migration `2026_09_30_002_simplify_hl_schema` сначала подсчитывает строки во всех legacy blocks. Любые данные блокируют migration до удаления с диагностикой всех непустых блоков. Только после успешного полного preflight удаляются пустые legacy HL и создаётся v0.2. Fresh install применяет последовательность автоматически. Повторные запуски безопасны:
+История хранится в Bitrix `Option` (`kk.korsac/applied_migrations`). ID PR1 сохранён и никогда не запускается с v0.2 definition. На fresh install 001 отмечается как explicit historical baseline только после read-only preflight; существующая v0.1 установка сохраняет уже применённую 001. Migration `2026_09_30_002_simplify_hl_schema` подсчитывает строки во всех legacy blocks до baseline/schema writes. Любые данные блокируют migration с диагностикой всех непустых блоков. Только после успешного полного preflight удаляются пустые legacy HL и создаётся v0.2. Повторные запуски безопасны:
 
 ```bash
 php local/modules/kk.korsac/tools/schema.php migrate

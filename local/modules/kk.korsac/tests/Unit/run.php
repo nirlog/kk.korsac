@@ -13,6 +13,7 @@ use KK\Korsac\Install\SchemaComparator;
 use KK\Korsac\Install\SchemaDefinition;
 use KK\Korsac\Install\SchemaGatewayInterface;
 use KK\Korsac\Install\SchemaInstaller;
+use KK\Korsac\Install\SchemaMigrationService;
 use KK\Korsac\Install\SqlIndexBuilder;
 use KK\Korsac\Repository\OptionTypeRegistry;
 
@@ -36,7 +37,15 @@ $fakeGateway = static function (): SchemaGatewayInterface {
         public function createIndex(string $tableName, string $name, array $columns, bool $unique): void { ++$this->writes; $this->indexes[$tableName][$name] = ['columns' => $columns, 'unique' => $unique]; }
         public function rows(string $blockName, array $select = ['*']): array { return []; }
         public function countRows(string $blockName): int { return $this->rowCounts[$blockName] ?? 0; }
-        public function deleteBlock(string $blockName): void { $this->deleted[] = $blockName; unset($this->blocks[$blockName]); }
+        public function deleteBlock(string $blockName): void { if (isset($this->blocks[$blockName])) ++$this->writes; $this->deleted[] = $blockName; unset($this->blocks[$blockName]); }
+    };
+};
+$fakeStore = static function (array $applied = []): MigrationStoreInterface {
+    return new class($applied) implements MigrationStoreInterface {
+        public array $ids = [];
+        public function __construct(array $applied) { foreach ($applied as $id) $this->ids[$id] = true; }
+        public function has(string $migrationId): bool { return isset($this->ids[$migrationId]); }
+        public function markApplied(string $migrationId): void { $this->ids[$migrationId] = true; }
     };
 };
 
@@ -45,7 +54,12 @@ $test('module bootstrap and CLI entrypoints are portable', static function () us
     $assert(realpath($namespaces['KK\\Korsac'] ?? '') === realpath(dirname(__DIR__, 2) . '/lib'));
     foreach (['tools/schema.php', 'tests/Integration/smoke.php', 'tests/Integration/install_smoke.php', 'tests/Integration/acceptance_smoke.php', 'tests/Integration/schema_v02_migration_smoke.php'] as $file) {
         $source = file_get_contents(dirname(__DIR__, 2) . '/' . $file);
-        $assert($source !== false && strpos($source, "\$_SERVER['DOCUMENT_ROOT'] = \$documentRoot;") < strpos($source, "require \$documentRoot . '/bitrix/modules/main/include/prolog_before.php';"), $file);
+        $assert($source !== false, "Cannot read {$file}");
+        $syncPosition = strpos($source, "\$_SERVER['DOCUMENT_ROOT'] = \$documentRoot;");
+        $prologPosition = strpos($source, "require \$documentRoot . '/bitrix/modules/main/include/prolog_before.php';");
+        $assert($syncPosition !== false, "{$file} does not synchronize DOCUMENT_ROOT");
+        $assert($prologPosition !== false, "{$file} does not load the Bitrix prolog");
+        $assert($syncPosition < $prologPosition, "{$file} synchronizes DOCUMENT_ROOT too late");
     }
 });
 $test('target schema is twelve identical option directories', static function () use ($assert): void {
@@ -81,12 +95,39 @@ $test('migration performs complete preflight before any deletion', static functi
     }
     throw new RuntimeException('Migration was not blocked');
 });
-$test('migration and installer are idempotent after empty legacy transition', static function () use ($assert, $fakeGateway): void {
+$test('fresh install baselines historical 001 and creates only v0.2', static function () use ($assert, $fakeGateway, $fakeStore): void {
+    $gateway = $fakeGateway(); $store = $fakeStore();
+    $applied = (new SchemaMigrationService($store, $gateway))->migrate();
+    $assert($applied === [SchemaMigrationService::V01_MIGRATION_ID, '2026_09_30_002_simplify_hl_schema']);
+    $assert(count(array_intersect(array_keys($gateway->blocks), array_keys(SchemaDefinition::entities()))) === 12);
+    foreach (SimplifyHlSchema::LEGACY_BLOCKS as $name) $assert(!isset($gateway->blocks[$name]));
+});
+$test('existing v0.1 with applied 001 transitions through 002', static function () use ($assert, $fakeGateway, $fakeStore): void {
     $gateway = $fakeGateway();
     foreach (SimplifyHlSchema::LEGACY_BLOCKS as $name) $gateway->blocks[$name] = ['ID'=>count($gateway->blocks)+1,'NAME'=>$name,'TABLE_NAME'=>'legacy_' . count($gateway->blocks)];
-    $installer = new SchemaInstaller($gateway); $migration = new SimplifyHlSchema($gateway, $installer); $migration->up();
-    $writes = $gateway->writes; $migration->up();
-    $assert($gateway->writes === $writes); $assert(count(SchemaDefinition::entities()) === 12);
+    $store = $fakeStore([SchemaMigrationService::V01_MIGRATION_ID]);
+    $assert((new SchemaMigrationService($store, $gateway))->migrate() === ['2026_09_30_002_simplify_hl_schema']);
+    foreach (SimplifyHlSchema::LEGACY_BLOCKS as $name) $assert(!isset($gateway->blocks[$name]));
+    foreach (array_keys(SchemaDefinition::entities()) as $name) $assert(isset($gateway->blocks[$name]));
+});
+$test('legacy data without 001 marker blocks before schema or history writes', static function () use ($assert, $fakeGateway, $fakeStore): void {
+    $gateway = $fakeGateway(); $store = $fakeStore();
+    $gateway->blocks['KorsacRamClass'] = ['ID'=>1, 'NAME'=>'KorsacRamClass', 'TABLE_NAME'=>'b_hlbd_korsac_ram_class'];
+    $gateway->rowCounts['KorsacRamClass'] = 3;
+    try { (new SchemaMigrationService($store, $gateway))->migrate(); } catch (RuntimeException $e) {
+        $assert(str_contains($e->getMessage(), 'KorsacRamClass contains 3 rows'));
+        $assert($gateway->writes === 0, 'Schema was changed before blocker');
+        $assert($store->ids === [], 'Historical baseline was recorded before blocker');
+        foreach (array_keys(SchemaDefinition::entities()) as $name) $assert(!isset($gateway->blocks[$name]));
+        return;
+    }
+    throw new RuntimeException('Migration was not blocked');
+});
+$test('repeated migrate is idempotent', static function () use ($assert, $fakeGateway, $fakeStore): void {
+    $gateway = $fakeGateway(); $store = $fakeStore(); $service = new SchemaMigrationService($store, $gateway);
+    $service->migrate(); $writes = $gateway->writes;
+    $assert($service->migrate() === []);
+    $assert($gateway->writes === $writes, 'Repeated migrate performed schema writes');
 });
 $test('migration runner records successful migration once', static function () use ($assert): void {
     $store = new class implements MigrationStoreInterface { public array $ids=[]; public function has(string $id): bool{return isset($this->ids[$id]);} public function markApplied(string $id):void{$this->ids[$id]=true;} };

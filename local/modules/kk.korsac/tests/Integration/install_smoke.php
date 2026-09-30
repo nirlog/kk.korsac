@@ -6,7 +6,7 @@ use Bitrix\Main\Loader;
 use Bitrix\Main\ModuleManager;
 use KK\Korsac\Health\SchemaSelfCheck;
 use KK\Korsac\Install\BitrixSchemaGateway;
-use KK\Korsac\Install\MigrationRunner;
+use KK\Korsac\Install\SchemaMigrationService;
 
 $documentRoot = ($_SERVER['DOCUMENT_ROOT'] ?? '') ?: dirname(__DIR__, 5);
 $_SERVER['DOCUMENT_ROOT'] = $documentRoot;
@@ -22,7 +22,7 @@ if (!Loader::includeModule('highloadblock')) {
 }
 
 $moduleRoot = dirname(__DIR__, 2);
-foreach (['include.php', 'install/index.php', 'lib/Install/MigrationRunner.php'] as $relativePath) {
+foreach (['include.php', 'install/index.php', 'lib/Install/SchemaMigrationService.php'] as $relativePath) {
     if (!is_file($moduleRoot . '/' . $relativePath)) {
         fwrite(STDERR, "Missing module file: {$relativePath}\n");
         exit(2);
@@ -35,7 +35,7 @@ $module->DoInstall();
 
 $installed = ModuleManager::isModuleInstalled('kk.korsac');
 $included = $installed && Loader::includeModule('kk.korsac');
-$autoloaded = $included && class_exists(MigrationRunner::class);
+$autoloaded = $included && class_exists(SchemaMigrationService::class);
 $result = $autoloaded
     ? (new SchemaSelfCheck(new BitrixSchemaGateway()))->run()
     : ['ok' => false, 'errors' => [['code' => 'install_bootstrap_failed']], 'warnings' => [], 'checkedAt' => date(DATE_ATOM)];

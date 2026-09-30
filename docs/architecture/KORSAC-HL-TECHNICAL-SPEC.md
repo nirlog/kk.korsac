@@ -67,7 +67,7 @@ Single-choice определяется парой `<PREFIX>_DEFAULT` и `<PREFIX
 
 ## 6. Установка и migration
 
-Migration history остаётся последовательной: существующий ID `2026_09_29_001_initial_hl_schema` не меняется, переход выполняет `2026_09_30_002_simplify_hl_schema`. Перед любым удалением migration получает row count **всех** 12 legacy HL-блоков. Если хотя бы один непуст, операция завершается исключением со всеми найденными count до первого удаления. Пустая legacy schema удаляется, после чего idempotent installer создаёт target schema. Fresh install последовательно применяет оба migration ID и заканчивается на v0.2.
+Migration history остаётся последовательной: существующий ID `2026_09_29_001_initial_hl_schema` не исполняется с новой schema и не переиспользуется. На fresh install он записывается как explicit historical baseline только после успешного read-only preflight, затем выполняется `2026_09_30_002_simplify_hl_schema`. На существующей v0.1 установке уже применённая 001 остаётся без изменений, и runner выполняет только 002. Перед baseline и перед любым удалением migration получает row count **всех** 12 legacy HL-блоков. Если хотя бы один непуст, операция завершается исключением со всеми найденными count до записи baseline и до первого schema write. Пустая legacy schema удаляется, после чего idempotent installer создаёт target schema.
 
 Обычный uninstall сохраняет HL schema и данные. Удаление legacy schema — единственная destructive операция v0.2 и разрешено только после полного preflight.
 
