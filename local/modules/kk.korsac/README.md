@@ -34,7 +34,16 @@ Migration smoke повторяем: на v0.2 он сообщает `already_mig
 
 ## Product configuration
 
-Single-choice использует `*_DEFAULT` + `*_OPTIONS`; пустой default означает отсутствие варианта. Multiple-choice использует `*_MULTI_OPTIONS`. Модуль не создаёт catalog properties. Полный список: [`docs/architecture/KORSAC-PRODUCT-CONFIGURATION.md`](../../../docs/architecture/KORSAC-PRODUCT-CONFIGURATION.md).
+Single-choice использует `*_DEFAULT` + `*_OPTIONS`; пустой default означает отсутствие варианта. Multiple-choice использует `*_MULTI_OPTIONS`. 22 directory properties устанавливаются только для явно переданного каталога и никогда не создаются `DoInstall()`:
+
+```bash
+php local/modules/kk.korsac/tools/catalog.php install-properties --iblock=<ID>
+php local/modules/kk.korsac/tools/catalog.php check-properties --iblock=<ID>
+```
+
+`ProductConfigurationRepository` читает только канонические KORSAC properties,
+сохраняет их порядок, проверяет ссылки и возвращает нормализованные identifiers
+без цен. Полный список и smoke-команды: [`docs/architecture/KORSAC-PRODUCT-CONFIGURATION.md`](../../../docs/architecture/KORSAC-PRODUCT-CONFIGURATION.md).
 
 ## Ограничения
 

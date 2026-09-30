@@ -17,6 +17,14 @@ use KK\Korsac\Install\SchemaInstaller;
 use KK\Korsac\Install\SchemaMigrationService;
 use KK\Korsac\Install\SqlIndexBuilder;
 use KK\Korsac\Repository\OptionTypeRegistry;
+use KK\Korsac\Catalog\CatalogPropertyGatewayInterface;
+use KK\Korsac\Catalog\BitrixCatalogPropertyGateway;
+use KK\Korsac\Catalog\CatalogPropertyInstaller;
+use KK\Korsac\Catalog\CatalogPropertySchema;
+use KK\Korsac\Catalog\CatalogPropertySelfCheck;
+use KK\Korsac\Catalog\ProductConfiguration;
+use KK\Korsac\Catalog\ProductConfigurationException;
+use KK\Korsac\Catalog\PropertyCodeParser;
 
 $tests = [];
 $test = static function (string $name, callable $callback) use (&$tests): void { $tests[$name] = $callback; };
@@ -50,11 +58,96 @@ $fakeStore = static function (array $applied = []): MigrationStoreInterface {
         public function markApplied(string $migrationId): void { $this->ids[$migrationId] = true; }
     };
 };
+$fakeCatalogGateway = static function (): CatalogPropertyGatewayInterface {
+    return new class implements CatalogPropertyGatewayInterface {
+        public array $properties = [], $propertyValues = [];
+        public int $writes = 0;
+        public function iblockExists(int $iblockId): bool { return $iblockId === 123; }
+        public function find(int $iblockId, string $code): ?array { return $this->properties[$code] ?? null; }
+        public function create(int $iblockId, array $property): int { ++$this->writes; $this->properties[$property['CODE']] = $property; return $this->writes; }
+        public function values(int $iblockId, int $productId, string $code): array { return $this->propertyValues[$code] ?? []; }
+        public function productExists(int $iblockId, int $productId): bool { return $iblockId === 123 && $productId === 456; }
+    };
+};
+
+$test('catalog property parser recognizes canonical codes only', static function () use ($assert): void {
+    $parser = new PropertyCodeParser();
+    $assert($parser->parse('KK_RAM_DEFAULT') === ['group'=>'RAM','role'=>'DEFAULT','mode'=>'single']);
+    $assert($parser->parse('KK_RAM_OPTIONS') === ['group'=>'RAM','role'=>'OPTIONS','mode'=>'single']);
+    $assert($parser->parse('KK_SERVICE_MULTI_OPTIONS') === ['group'=>'SERVICE','role'=>'MULTI_OPTIONS','mode'=>'multiple']);
+    foreach (['KK_SERVICE_MULTIOPTIONS', 'KK_UNKNOWN_OPTIONS', 'KK_SERVICE_OPTIONS', 'KK_RAM_MULTI_OPTIONS'] as $code) {
+        try { $parser->parse($code); } catch (InvalidArgumentException) { continue; }
+        throw new RuntimeException("Invalid code accepted: {$code}");
+    }
+});
+$test('catalog schema generates twenty-two directory properties', static function () use ($assert): void {
+    $groups = CatalogPropertySchema::groups(); $properties = CatalogPropertySchema::properties();
+    $assert(count($properties) === 22);
+    $assert(count(array_filter($groups, static fn(array $group): bool => $group['mode'] === 'single')) === 10);
+    $assert(count(array_filter($groups, static fn(array $group): bool => $group['mode'] === 'multiple')) === 2);
+    $assert($properties['KK_RAM_DEFAULT']['USER_TYPE_SETTINGS']['TABLE_NAME'] === 'b_hlbd_korsac_ram');
+    $assert($properties['KK_SERVICE_MULTI_OPTIONS']['USER_TYPE_SETTINGS']['TABLE_NAME'] === 'b_hlbd_korsac_service');
+    $assert($properties['KK_RAM_DEFAULT']['MULTIPLE'] === 'N');
+    $assert($properties['KK_RAM_OPTIONS']['MULTIPLE'] === 'Y');
+    $assert($properties['KK_SERVICE_MULTI_OPTIONS']['MULTIPLE'] === 'Y');
+    foreach ($properties as $property) { $assert($property['PROPERTY_TYPE'] === 'S'); $assert($property['USER_TYPE'] === 'directory'); $assert($property['IS_REQUIRED'] === 'N'); }
+});
+$test('Bitrix property reads use stable multiple value ordering', static function () use ($assert): void {
+    $assert(BitrixCatalogPropertyGateway::PROPERTY_VALUE_ORDER === ['sort'=>'asc', 'id'=>'asc', 'value_id'=>'asc']);
+    $source = file_get_contents(dirname(__DIR__, 2) . '/lib/Catalog/BitrixCatalogPropertyGateway.php');
+    $assert(str_contains((string)$source, 'GetProperty($iblockId, $productId, self::PROPERTY_VALUE_ORDER'));
+});
+$test('catalog property installer is idempotent and rejects conflicts', static function () use ($assert, $fakeCatalogGateway): void {
+    $gateway = $fakeCatalogGateway(); $installer = new CatalogPropertyInstaller($gateway);
+    $assert($installer->installWithResult(123) === ['created'=>22, 'existing'=>0]);
+    $writes = $gateway->writes;
+    $assert($installer->installWithResult(123) === ['created'=>0, 'existing'=>22]);
+    $assert($gateway->writes === $writes);
+    foreach ([
+        ['MULTIPLE', 'N'], ['USER_TYPE', 'String'], ['IS_REQUIRED', 'Y'], ['USER_TYPE_SETTINGS', ['TABLE_NAME'=>'b_wrong']],
+    ] as [$field, $value]) {
+        $broken = $fakeCatalogGateway(); $broken->properties = CatalogPropertySchema::properties(); $broken->properties['KK_RAM_OPTIONS'][$field] = $value;
+        try { (new CatalogPropertyInstaller($broken))->install(123); } catch (RuntimeException) { continue; }
+        throw new RuntimeException("Installer accepted incompatible {$field}");
+    }
+});
+$test('catalog property self-check emits actionable mismatches', static function () use ($assert, $fakeCatalogGateway): void {
+    $gateway = $fakeCatalogGateway(); $gateway->properties = CatalogPropertySchema::properties();
+    unset($gateway->properties['KK_CPU_DEFAULT']);
+    $gateway->properties['KK_RAM_OPTIONS']['MULTIPLE'] = 'N';
+    $gateway->properties['KK_GPU_DEFAULT']['USER_TYPE'] = '';
+    $gateway->properties['KK_HDD_DEFAULT']['IS_REQUIRED'] = 'Y';
+    $gateway->properties['KK_SERVICE_MULTI_OPTIONS']['USER_TYPE_SETTINGS']['TABLE_NAME'] = 'b_wrong';
+    $errors = (new CatalogPropertySelfCheck($gateway))->run(123)['errors'];
+    foreach (['missing_property','property_multiple_mismatch','property_user_type_mismatch','property_required_mismatch','property_directory_mismatch'] as $code) $assert(in_array($code, array_column($errors, 'code'), true), $code);
+    $required = array_values(array_filter($errors, static fn(array $error): bool => $error['code'] === 'property_required_mismatch'));
+    $assert($required === [['code'=>'property_required_mismatch','property'=>'KK_HDD_DEFAULT','expected'=>'N','actual'=>'Y']]);
+});
+$test('product configuration supports optional defaults and preserves order', static function () use ($assert): void {
+    $values = ['KK_CPU_DEFAULT'=>['CPU_A'], 'KK_HDD_OPTIONS'=>['HDD_4','HDD_2'], 'KK_SOFTWARE_MULTI_OPTIONS'=>['SW_B','SW_A']];
+    $configuration = ProductConfiguration::fromPropertyValues($values, static fn(string $group,string $id): array => ['UF_XML_ID'=>$id,'UF_ACTIVE'=>1])->toArray();
+    $assert($configuration['CPU'] === ['mode'=>'single','default'=>'CPU_A','options'=>[]]);
+    $assert($configuration['HDD'] === ['mode'=>'single','default'=>null,'options'=>['HDD_4','HDD_2']]);
+    $assert($configuration['SOFTWARE']['options'] === ['SW_B','SW_A']);
+});
+$test('product configuration reports duplicate missing and inactive options', static function () use ($assert): void {
+    $cases = [
+        [['KK_RAM_DEFAULT'=>['RAM_A'], 'KK_RAM_OPTIONS'=>['RAM_A']], 'default_duplicated_in_options', static fn()=>['UF_ACTIVE'=>1]],
+        [['KK_RAM_OPTIONS'=>['RAM_A','RAM_A']], 'duplicate_option', static fn()=>['UF_ACTIVE'=>1]],
+        [['KK_RAM_OPTIONS'=>['RAM_UNKNOWN']], 'missing_option', static fn()=>null],
+        [['KK_RAM_OPTIONS'=>['RAM_OLD']], 'inactive_option', static fn()=>['UF_ACTIVE'=>0]],
+    ];
+    foreach ($cases as [$values, $code, $resolver]) {
+        try { ProductConfiguration::fromPropertyValues($values, $resolver); }
+        catch (ProductConfigurationException $error) { $assert($error->diagnostic()['code'] === $code); continue; }
+        throw new RuntimeException("Configuration error not detected: {$code}");
+    }
+});
 
 $test('module bootstrap and CLI entrypoints are portable', static function () use ($assert): void {
     $namespaces = require __DIR__ . '/fixtures/load_module_include.php';
     $assert(realpath($namespaces['KK\\Korsac'] ?? '') === realpath(dirname(__DIR__, 2) . '/lib'));
-    foreach (['tools/schema.php', 'tests/Integration/smoke.php', 'tests/Integration/install_smoke.php', 'tests/Integration/acceptance_smoke.php', 'tests/Integration/schema_v02_migration_smoke.php'] as $file) {
+    foreach (['tools/schema.php', 'tools/catalog.php', 'tests/Integration/smoke.php', 'tests/Integration/install_smoke.php', 'tests/Integration/acceptance_smoke.php', 'tests/Integration/schema_v02_migration_smoke.php', 'tests/Integration/catalog_properties_smoke.php', 'tests/Integration/product_configuration_smoke.php'] as $file) {
         $source = file_get_contents(dirname(__DIR__, 2) . '/' . $file);
         $assert($source !== false, "Cannot read {$file}");
         $syncPosition = strpos($source, "\$_SERVER['DOCUMENT_ROOT'] = \$documentRoot;");
