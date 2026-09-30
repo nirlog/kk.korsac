@@ -45,6 +45,28 @@ php local/modules/kk.korsac/tools/catalog.php check-properties --iblock=<ID>
 сохраняет их порядок, проверяет ссылки и возвращает нормализованные identifiers
 без цен. Полный список и smoke-команды: [`docs/architecture/KORSAC-PRODUCT-CONFIGURATION.md`](../../../docs/architecture/KORSAC-PRODUCT-CONFIGURATION.md).
 
+
+## Configuration pricing
+
+Pricing layer валидирует `ConfigurationSelection` строго по whitelist из
+`ProductConfiguration`, читает абсолютные `UF_PRICE` через
+`HlOptionPriceProvider` и возвращает объяснимый `ConfigurationPriceResult`.
+Деньги после границы HL представлены только целыми minor units (копейками).
+Цена DEFAULT-конфигурации передаётся calculator извне как `basePriceMinor`:
+модуль не читает и не обновляет Catalog price, не суммирует defaults и не
+применяет скидки. Весь pricing path read-only.
+
+```bash
+php local/modules/kk.korsac/tests/Integration/configuration_pricing_smoke.php \
+  --iblock=2 --product=4 --base-price-minor=15000000
+
+php local/modules/kk.korsac/tests/Integration/configuration_pricing_smoke.php \
+  --iblock=2 --product=4 --base-price-minor=15000000 \
+  --selection-json='{"HDD":"HDD_2TB","SOFTWARE":["SOFTWARE_OFFICE"]}'
+```
+
+Подробности и формулы: [`KORSAC-CONFIGURATION-PRICING.md`](../../../docs/architecture/KORSAC-CONFIGURATION-PRICING.md).
+
 ## Ограничения
 
-Интеграционные scripts требуют реальной Bitrix-среды. Bitrix UF не предоставляет переносимый DB default `now`, поэтому timestamps заполняет server-side write layer. Frontend, configurator, pricing formulas, catalog creation, basket/order, supplier/stock integrations, compatibility engine и admin CRUD не входят в PR2.
+Интеграционные scripts требуют реальной Bitrix-среды. Bitrix UF не предоставляет переносимый DB default `now`, поэтому timestamps заполняет server-side write layer. Frontend, catalog base-price recalculation, basket/order, supplier/stock integrations, compatibility engine и admin CRUD не входят в pricing layer.
