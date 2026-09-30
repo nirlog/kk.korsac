@@ -49,6 +49,13 @@ Pure-PHP тесты не требуют Битрикс:
 php local/modules/kk.korsac/tests/Unit/run.php
 ```
 
+Актуальный проверенный статус PR #2:
+
+- pure-PHP suite: `13 tests, 0 failures`;
+- на реальной Bitrix-среде `php local/modules/kk.korsac/tools/schema.php check` успешно вернул `ok=true`, `errors=[]`, `warnings=[]`;
+- на реальной Bitrix-среде `php local/modules/kk.korsac/tests/Integration/smoke.php` успешно вернул `ok=true`, `errors=[]`, `warnings=[]`;
+- новый `acceptance_smoke.php` требует отдельного запуска на реальной Bitrix-среде после обновления ветки.
+
 Install smoke запускается только на тестовом сайте, где `kk.korsac` ещё не зарегистрирован. При нарушении precondition он завершается без изменений; при успехе устанавливает модуль и намеренно оставляет его зарегистрированным, не удаляя HL data:
 
 ```bash
