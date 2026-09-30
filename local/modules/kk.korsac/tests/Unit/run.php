@@ -154,7 +154,7 @@ $test('product configuration reports duplicate missing and inactive options', st
 $test('module bootstrap and CLI entrypoints are portable', static function () use ($assert): void {
     $namespaces = require __DIR__ . '/fixtures/load_module_include.php';
     $assert(realpath($namespaces['KK\\Korsac'] ?? '') === realpath(dirname(__DIR__, 2) . '/lib'));
-    foreach (['tools/schema.php', 'tools/catalog.php', 'tests/Integration/smoke.php', 'tests/Integration/install_smoke.php', 'tests/Integration/acceptance_smoke.php', 'tests/Integration/schema_v02_migration_smoke.php', 'tests/Integration/catalog_properties_smoke.php', 'tests/Integration/product_configuration_smoke.php'] as $file) {
+    foreach (['tools/schema.php', 'tools/catalog.php', 'tests/Integration/smoke.php', 'tests/Integration/install_smoke.php', 'tests/Integration/acceptance_smoke.php', 'tests/Integration/schema_v02_migration_smoke.php', 'tests/Integration/catalog_properties_smoke.php', 'tests/Integration/product_configuration_smoke.php', 'tests/Integration/configuration_pricing_smoke.php'] as $file) {
         $source = file_get_contents(dirname(__DIR__, 2) . '/' . $file);
         $assert($source !== false, "Cannot read {$file}");
         $syncPosition = strpos($source, "\$_SERVER['DOCUMENT_ROOT'] = \$documentRoot;");
@@ -303,6 +303,28 @@ $test('configuration selection normalizes defaults and validates whitelist and t
         catch (ConfigurationPricingException $error) { $assert($error->diagnostic()['code'] === $code); continue; }
         throw new RuntimeException("Selection {$code} accepted");
     }
+});
+$test('configuration selection is bound to its product configuration snapshot', static function () use ($assert): void {
+    $resolver = static fn(string $group, string $id): array => ['UF_XML_ID'=>$id, 'UF_ACTIVE'=>1];
+    $configurationA = ProductConfiguration::fromPropertyValues(['KK_RAM_DEFAULT'=>['RAM_A']], $resolver);
+    $equivalentConfigurationA = ProductConfiguration::fromPropertyValues(['KK_RAM_DEFAULT'=>['RAM_A']], $resolver);
+    $configurationB = ProductConfiguration::fromPropertyValues(['KK_RAM_DEFAULT'=>['RAM_B']], $resolver);
+    $selection = ConfigurationSelection::fromArray($configurationA, []);
+    $provider = new class implements OptionPriceProviderInterface {
+        public int $calls = 0;
+        public function getPriceMinor(string $group,string $xmlId):int { ++$this->calls; return 100; }
+    };
+    $calculator = new ConfigurationPriceCalculator($provider);
+    try { $calculator->calculate($configurationB, $selection, 15000000); }
+    catch (ConfigurationPricingException $error) {
+        $assert($error->diagnostic() === ['code'=>'selection_configuration_mismatch']);
+        $assert($provider->calls === 0, 'Price provider was called before configuration compatibility check');
+        $result = $calculator->calculate($equivalentConfigurationA, $selection, 15000000)->toArray();
+        $assert($result['configurationDeltaMinor'] === 0 && $result['finalPriceMinor'] === 15000000);
+        $assert($provider->calls === 1);
+        return;
+    }
+    throw new RuntimeException('Selection was accepted for a different configuration');
 });
 $test('configuration calculator returns default upgrade downgrade optional multiple and combined breakdown', static function () use ($assert, $pricingConfiguration): void {
     $prices = ['RAM_32'=>1200000,'RAM_64'=>2000000,'GPU_80'=>8000000,'GPU_65'=>6500000,'HDD_2TB'=>800000,'SOFTWARE_A'=>1000000,'SOFTWARE_B'=>300000];

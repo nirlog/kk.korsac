@@ -24,7 +24,10 @@ wrong value shapes, duplicate multiple values, and options outside the whitelist
 are rejected with a structured `ConfigurationPricingException` diagnostic.
 Missing single groups select their default and missing multiple groups select an
 empty list. An explicit `null` is allowed only when the single group's default is
-`null`.
+`null`. The normalized selection retains the configuration snapshot used for
+validation. Before reading any option price, the calculator rejects use with a
+different snapshot as `selection_configuration_mismatch`; an independently
+created but structurally equivalent `ProductConfiguration` remains compatible.
 
 The current Catalog price for the DEFAULT configuration is supplied by the
 caller as `basePriceMinor`. The calculator does not read or write Catalog,

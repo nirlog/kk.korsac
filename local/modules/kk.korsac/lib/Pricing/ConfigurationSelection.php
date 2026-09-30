@@ -8,7 +8,10 @@ use KK\Korsac\Catalog\ProductConfiguration;
 
 final class ConfigurationSelection
 {
-    private function __construct(private readonly array $groups) {}
+    private function __construct(
+        private readonly array $groups,
+        private readonly array $configurationSnapshot,
+    ) {}
 
     public static function fromArray(ProductConfiguration $configuration, array $selection): self
     {
@@ -58,11 +61,18 @@ final class ConfigurationSelection
             }
             $normalized[$group] = $value;
         }
-        return new self($normalized);
+        return new self($normalized, $groups);
     }
 
     public function toArray(): array
     {
         return $this->groups;
+    }
+
+    public function assertCompatibleWith(ProductConfiguration $configuration): void
+    {
+        if ($configuration->toArray() !== $this->configurationSnapshot) {
+            throw new ConfigurationPricingException(['code' => 'selection_configuration_mismatch']);
+        }
     }
 }

@@ -12,6 +12,7 @@ final class ConfigurationPriceCalculator
 
     public function calculate(ProductConfiguration $configuration, ConfigurationSelection $selection, int $basePriceMinor): ConfigurationPriceResult
     {
+        $selection->assertCompatibleWith($configuration);
         if ($basePriceMinor < 0) {
             throw new ConfigurationPricingException(['code' => 'invalid_base_price']);
         }
