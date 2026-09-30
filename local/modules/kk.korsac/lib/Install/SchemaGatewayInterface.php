@@ -17,4 +17,6 @@ interface SchemaGatewayInterface
     public function findDuplicateRows(string $tableName, array $columns): array;
     public function createIndex(string $tableName, string $name, array $columns, bool $unique): void;
     public function rows(string $blockName, array $select = ['*']): array;
+    public function countRows(string $blockName): int;
+    public function deleteBlock(string $blockName): void;
 }

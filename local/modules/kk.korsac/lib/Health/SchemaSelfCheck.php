@@ -64,69 +64,21 @@ final class SchemaSelfCheck
     public static function analyzeData(array $rowsByEntity): array
     {
         $errors = [];
-        $codes = [];
         foreach ($rowsByEntity as $entity => $rows) {
             $seen = [];
             foreach ($rows as $row) {
                 $xmlId = (string)($row['UF_XML_ID'] ?? '');
-                if ($xmlId !== '' && isset($seen[$xmlId])) {
+                if ($xmlId === '') {
+                    $errors[] = ['code' => 'empty_xml_id', 'entity' => $entity];
+                } elseif (isset($seen[$xmlId])) {
                     $errors[] = ['code' => 'duplicate_xml_id', 'entity' => $entity, 'xmlId' => $xmlId];
                 }
                 $seen[$xmlId] = true;
-                if (in_array($entity, SchemaDefinition::COMPONENT_CLASS_TYPES, true)
-                    && isset($row['UF_PRICE']) && (float)$row['UF_PRICE'] < 0) {
+                if (isset($row['UF_PRICE']) && (float)$row['UF_PRICE'] < 0) {
                     $errors[] = ['code' => 'negative_price', 'entity' => $entity, 'xmlId' => $xmlId];
-                }
-            }
-            $codes[$entity] = $seen;
-        }
-        foreach ($rowsByEntity['KorsacPhysicalSku'] ?? [] as $row) {
-            $type = (string)($row['UF_COMPONENT_TYPE'] ?? '');
-            $block = SchemaDefinition::PHYSICAL_SKU_TYPES[$type] ?? null;
-            if ($block === null || !isset($codes[$block][(string)($row['UF_CLASS_XML_ID'] ?? '')])) {
-                $errors[] = ['code' => 'broken_class_reference', 'entity' => 'KorsacPhysicalSku', 'xmlId' => $row['UF_XML_ID'] ?? null];
-            }
-        }
-        $skuCodes = $codes['KorsacPhysicalSku'] ?? [];
-        foreach ($rowsByEntity['KorsacSupplierOffer'] ?? [] as $row) {
-            if (!isset($skuCodes[(string)($row['UF_PHYSICAL_SKU'] ?? '')])) {
-                $errors[] = ['code' => 'broken_sku_reference', 'entity' => 'KorsacSupplierOffer', 'xmlId' => $row['UF_XML_ID'] ?? null];
-            }
-        }
-        foreach ($rowsByEntity['KorsacValidatedBuild'] ?? [] as $row) {
-            foreach (['UF_CASE_SKU','UF_MB_SKU','UF_GPU_SKU','UF_PSU_SKU','UF_COOLER_SKU'] as $field) {
-                $reference = (string)($row[$field] ?? '');
-                if ($reference !== '' && !isset($skuCodes[$reference])) {
-                    $errors[] = ['code' => 'broken_build_reference', 'entity' => 'KorsacValidatedBuild', 'xmlId' => $row['UF_XML_ID'] ?? null, 'field' => $field];
-                }
-            }
-            $json = (string)($row['UF_COMPONENTS_JSON'] ?? '');
-            if ($json !== '') {
-                $decoded = json_decode($json, true);
-                if (!is_array($decoded)) {
-                    $errors[] = ['code' => 'invalid_components_json', 'entity' => 'KorsacValidatedBuild', 'xmlId' => $row['UF_XML_ID'] ?? null];
-                } else {
-                    foreach (self::skuReferences($decoded) as $reference) {
-                        if (!isset($skuCodes[$reference])) {
-                            $errors[] = ['code' => 'broken_build_json_reference', 'entity' => 'KorsacValidatedBuild', 'xmlId' => $row['UF_XML_ID'] ?? null, 'reference' => $reference];
-                        }
-                    }
                 }
             }
         }
         return $errors;
-    }
-
-    private static function skuReferences(array $value): array
-    {
-        $references = [];
-        foreach ($value as $key => $item) {
-            if (is_array($item)) {
-                $references = array_merge($references, self::skuReferences($item));
-            } elseif (is_string($item) && preg_match('/sku/i', (string)$key) && $item !== '') {
-                $references[] = $item;
-            }
-        }
-        return $references;
     }
 }

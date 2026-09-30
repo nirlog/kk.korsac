@@ -7,11 +7,11 @@ namespace KK\Korsac\Repository;
 use Bitrix\Highloadblock\HighloadBlockTable;
 use RuntimeException;
 
-final class ComponentClassRepository
+final class OptionRepository
 {
-    public function findByTypeAndXmlId(string $componentType, string $xmlId): ?array
+    public function findByTypeAndXmlId(string $type, string $xmlId): ?array
     {
-        $blockName = ComponentTypeRegistry::blockName($componentType);
+        $blockName = OptionTypeRegistry::blockName($type);
         $block = HighloadBlockTable::getList(['filter' => ['=NAME' => $blockName], 'limit' => 1])->fetch();
         if (!$block) {
             throw new RuntimeException("HL block {$blockName} is not installed");

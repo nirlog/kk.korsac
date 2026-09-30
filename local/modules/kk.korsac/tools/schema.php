@@ -6,6 +6,7 @@ use Bitrix\Main\Loader;
 use KK\Korsac\Health\SchemaSelfCheck;
 use KK\Korsac\Install\BitrixSchemaGateway;
 use KK\Korsac\Install\Migration\InitialHlSchema;
+use KK\Korsac\Install\Migration\SimplifyHlSchema;
 use KK\Korsac\Install\MigrationRunner;
 use KK\Korsac\Install\OptionMigrationStore;
 use KK\Korsac\Install\SchemaInstaller;
@@ -19,8 +20,11 @@ if (!Loader::includeModule('highloadblock') || !Loader::includeModule('kk.korsac
 $gateway = new BitrixSchemaGateway();
 $command = $argv[1] ?? 'check';
 if ($command === 'migrate') {
-    $applied = (new MigrationRunner(new OptionMigrationStore()))
-        ->run([new InitialHlSchema(new SchemaInstaller($gateway))]);
+    $installer = new SchemaInstaller($gateway);
+    $applied = (new MigrationRunner(new OptionMigrationStore()))->run([
+        new InitialHlSchema($installer),
+        new SimplifyHlSchema($gateway, $installer),
+    ]);
     echo json_encode(['applied' => $applied], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), PHP_EOL;
     exit(0);
 }
