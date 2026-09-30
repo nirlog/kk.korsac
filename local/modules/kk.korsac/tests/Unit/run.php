@@ -25,6 +25,13 @@ use KK\Korsac\Catalog\CatalogPropertySelfCheck;
 use KK\Korsac\Catalog\ProductConfiguration;
 use KK\Korsac\Catalog\ProductConfigurationException;
 use KK\Korsac\Catalog\PropertyCodeParser;
+use KK\Korsac\Pricing\ConfigurationPriceCalculator;
+use KK\Korsac\Pricing\ConfigurationPricingException;
+use KK\Korsac\Pricing\ConfigurationSelection;
+use KK\Korsac\Pricing\HlOptionPriceProvider;
+use KK\Korsac\Pricing\OptionPriceProviderInterface;
+use KK\Korsac\Pricing\PriceNormalizer;
+use KK\Korsac\Repository\OptionRepository;
 
 $tests = [];
 $test = static function (string $name, callable $callback) use (&$tests): void { $tests[$name] = $callback; };
@@ -147,7 +154,7 @@ $test('product configuration reports duplicate missing and inactive options', st
 $test('module bootstrap and CLI entrypoints are portable', static function () use ($assert): void {
     $namespaces = require __DIR__ . '/fixtures/load_module_include.php';
     $assert(realpath($namespaces['KK\\Korsac'] ?? '') === realpath(dirname(__DIR__, 2) . '/lib'));
-    foreach (['tools/schema.php', 'tools/catalog.php', 'tests/Integration/smoke.php', 'tests/Integration/install_smoke.php', 'tests/Integration/acceptance_smoke.php', 'tests/Integration/schema_v02_migration_smoke.php', 'tests/Integration/catalog_properties_smoke.php', 'tests/Integration/product_configuration_smoke.php'] as $file) {
+    foreach (['tools/schema.php', 'tools/catalog.php', 'tests/Integration/smoke.php', 'tests/Integration/install_smoke.php', 'tests/Integration/acceptance_smoke.php', 'tests/Integration/schema_v02_migration_smoke.php', 'tests/Integration/catalog_properties_smoke.php', 'tests/Integration/product_configuration_smoke.php', 'tests/Integration/configuration_pricing_smoke.php'] as $file) {
         $source = file_get_contents(dirname(__DIR__, 2) . '/' . $file);
         $assert($source !== false, "Cannot read {$file}");
         $syncPosition = strpos($source, "\$_SERVER['DOCUMENT_ROOT'] = \$documentRoot;");
@@ -261,6 +268,103 @@ $test('bounded string indexes retain prefixes and comparison semantics', static 
     $assert(!SchemaComparator::indexIsCompatible(['unique'=>1,'columns'=>[['name'=>'UF_XML_ID','length'=>64]]], $index));
     $field = SchemaDefinition::entities()['KorsacCpu']['fields']['UF_XML_ID'];
     $assert(SchemaComparator::fieldIsCompatible(['USER_TYPE_ID'=>'string','MULTIPLE'=>'N','MANDATORY'=>'Y','SETTINGS'=>['MAX_LENGTH'=>128]], $field));
+});
+
+$pricingConfiguration = static function (): ProductConfiguration {
+    return ProductConfiguration::fromPropertyValues([
+        'KK_RAM_DEFAULT'=>['RAM_32'], 'KK_RAM_OPTIONS'=>['RAM_64'],
+        'KK_GPU_DEFAULT'=>['GPU_80'], 'KK_GPU_OPTIONS'=>['GPU_65'],
+        'KK_HDD_OPTIONS'=>['HDD_2TB'],
+        'KK_SOFTWARE_MULTI_OPTIONS'=>['SOFTWARE_A','SOFTWARE_B'],
+    ], static fn(string $group, string $id): array => ['UF_XML_ID'=>$id, 'UF_ACTIVE'=>1]);
+};
+$test('price normalizer converts decimal boundary values without float arithmetic downstream', static function () use ($assert): void {
+    foreach ([['1234.56',123456], ['1234.5',123450], ['1234',123400], [1234,123400], [1234.56,123456], [0,0], [0.01,1]] as [$value,$expected]) {
+        $assert(PriceNormalizer::toMinor($value) === $expected);
+    }
+    foreach ([null, true, '', '12.345', 'abc', INF] as $value) {
+        try { PriceNormalizer::toMinor($value); } catch (ConfigurationPricingException $error) { $assert($error->diagnostic()['code'] === 'invalid_option_price'); continue; }
+        throw new RuntimeException('Invalid price accepted');
+    }
+});
+$test('configuration selection normalizes defaults and validates whitelist and types', static function () use ($assert, $pricingConfiguration): void {
+    $configuration = $pricingConfiguration();
+    $default = ConfigurationSelection::fromArray($configuration, [])->toArray();
+    $assert($default['RAM'] === 'RAM_32' && $default['HDD'] === null && $default['SOFTWARE'] === []);
+    $assert(ConfigurationSelection::fromArray($configuration, ['HDD'=>null])->toArray()['HDD'] === null);
+    $cases = [
+        [['MONITOR'=>'X'],'unknown_configuration_group'], [['RAM'=>'RAM_128'],'option_not_allowed'],
+        [['SOFTWARE'=>['SOFTWARE_X']],'option_not_allowed'], [['RAM'=>['RAM_64']],'invalid_single_selection'],
+        [['SOFTWARE'=>'SOFTWARE_A'],'invalid_multiple_selection'], [['SOFTWARE'=>['SOFTWARE_A','SOFTWARE_A']],'duplicate_selected_option'],
+        [['RAM'=>null],'null_not_allowed'],
+    ];
+    foreach ($cases as [$input,$code]) {
+        try { ConfigurationSelection::fromArray($configuration, $input); }
+        catch (ConfigurationPricingException $error) { $assert($error->diagnostic()['code'] === $code); continue; }
+        throw new RuntimeException("Selection {$code} accepted");
+    }
+});
+$test('configuration selection is bound to its product configuration snapshot', static function () use ($assert): void {
+    $resolver = static fn(string $group, string $id): array => ['UF_XML_ID'=>$id, 'UF_ACTIVE'=>1];
+    $configurationA = ProductConfiguration::fromPropertyValues(['KK_RAM_DEFAULT'=>['RAM_A']], $resolver);
+    $equivalentConfigurationA = ProductConfiguration::fromPropertyValues(['KK_RAM_DEFAULT'=>['RAM_A']], $resolver);
+    $configurationB = ProductConfiguration::fromPropertyValues(['KK_RAM_DEFAULT'=>['RAM_B']], $resolver);
+    $selection = ConfigurationSelection::fromArray($configurationA, []);
+    $provider = new class implements OptionPriceProviderInterface {
+        public int $calls = 0;
+        public function getPriceMinor(string $group,string $xmlId):int { ++$this->calls; return 100; }
+    };
+    $calculator = new ConfigurationPriceCalculator($provider);
+    try { $calculator->calculate($configurationB, $selection, 15000000); }
+    catch (ConfigurationPricingException $error) {
+        $assert($error->diagnostic() === ['code'=>'selection_configuration_mismatch']);
+        $assert($provider->calls === 0, 'Price provider was called before configuration compatibility check');
+        $result = $calculator->calculate($equivalentConfigurationA, $selection, 15000000)->toArray();
+        $assert($result['configurationDeltaMinor'] === 0 && $result['finalPriceMinor'] === 15000000);
+        $assert($provider->calls === 1);
+        return;
+    }
+    throw new RuntimeException('Selection was accepted for a different configuration');
+});
+$test('configuration calculator returns default upgrade downgrade optional multiple and combined breakdown', static function () use ($assert, $pricingConfiguration): void {
+    $prices = ['RAM_32'=>1200000,'RAM_64'=>2000000,'GPU_80'=>8000000,'GPU_65'=>6500000,'HDD_2TB'=>800000,'SOFTWARE_A'=>1000000,'SOFTWARE_B'=>300000];
+    $provider = new class($prices) implements OptionPriceProviderInterface {
+        public function __construct(private array $prices) {}
+        public function getPriceMinor(string $group,string $xmlId):int { return $this->prices[$xmlId]; }
+    };
+    $configuration = $pricingConfiguration(); $calculator = new ConfigurationPriceCalculator($provider);
+    $default = $calculator->calculate($configuration, ConfigurationSelection::fromArray($configuration, []), 15000000)->toArray();
+    $assert($default['configurationDeltaMinor'] === 0 && $default['finalPriceMinor'] === 15000000);
+    $combined = $calculator->calculate($configuration, ConfigurationSelection::fromArray($configuration, ['RAM'=>'RAM_64','HDD'=>'HDD_2TB','SOFTWARE'=>['SOFTWARE_A']]), 15000000)->toArray();
+    $assert($combined['configurationDeltaMinor'] === 2600000 && $combined['finalPriceMinor'] === 17600000);
+    $resultObject = $calculator->calculate($configuration, ConfigurationSelection::fromArray($configuration, ['RAM'=>'RAM_64','GPU'=>'GPU_65','HDD'=>'HDD_2TB','SOFTWARE'=>['SOFTWARE_A','SOFTWARE_B']]), 15000000);
+    $result = $resultObject->toArray();
+    $assert($result['groups']['RAM']['deltaMinor'] === 800000);
+    $assert($result['groups']['GPU']['deltaMinor'] === -1500000);
+    $assert($result['groups']['HDD']['deltaMinor'] === 800000);
+    $assert($result['groups']['SOFTWARE']['deltaMinor'] === 1300000);
+    $assert($result['configurationDeltaMinor'] === 1400000 && $result['finalPriceMinor'] === 16400000);
+    $assert($resultObject->jsonSerialize() === $result);
+    try { $calculator->calculate($configuration, ConfigurationSelection::fromArray($configuration, []), -1); } catch (ConfigurationPricingException $e) { $assert($e->diagnostic()['code']==='invalid_base_price'); return; }
+    throw new RuntimeException('Negative base accepted');
+});
+$test('calculator rejects a negative final price', static function () use ($assert, $pricingConfiguration): void {
+    $provider = new class implements OptionPriceProviderInterface { public function getPriceMinor(string $group,string $xmlId):int { return $xmlId === 'GPU_80' ? 8000000 : ($xmlId === 'GPU_65' ? 0 : 0); } };
+    $configuration=$pricingConfiguration(); $selection=ConfigurationSelection::fromArray($configuration,['GPU'=>'GPU_65']);
+    try { (new ConfigurationPriceCalculator($provider))->calculate($configuration,$selection,100); } catch (ConfigurationPricingException $e) { $assert($e->diagnostic()['code']==='negative_final_price'); return; }
+    throw new RuntimeException('Negative final accepted');
+});
+$test('HL option price provider validates data and caches successful reads', static function () use ($assert): void {
+    $repository = new class extends OptionRepository {
+        public int $reads=0; public array $rows=['OK'=>['UF_PRICE'=>'1234.56'],'BAD'=>['UF_PRICE'=>'no'],'NEG'=>['UF_PRICE'=>'-1.00'],'MISSING_FIELD'=>[]];
+        public function findByTypeAndXmlId(string $type,string $xmlId):?array { ++$this->reads; return $this->rows[$xmlId] ?? null; }
+    };
+    $provider = new HlOptionPriceProvider($repository);
+    $assert($provider->getPriceMinor('RAM','OK') === 123456); $assert($provider->getPriceMinor('RAM','OK') === 123456); $assert($repository->reads === 1);
+    foreach ([['NONE','price_option_not_found'],['BAD','invalid_option_price'],['MISSING_FIELD','invalid_option_price'],['NEG','negative_option_price']] as [$id,$code]) {
+        try { $provider->getPriceMinor('RAM',$id); } catch (ConfigurationPricingException $e) { $assert($e->diagnostic()['code']===$code); continue; }
+        throw new RuntimeException("Provider accepted {$id}");
+    }
 });
 
 $failed = 0;

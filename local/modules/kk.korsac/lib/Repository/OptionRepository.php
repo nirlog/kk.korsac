@@ -7,7 +7,7 @@ namespace KK\Korsac\Repository;
 use Bitrix\Highloadblock\HighloadBlockTable;
 use RuntimeException;
 
-final class OptionRepository
+class OptionRepository
 {
     public function findByTypeAndXmlId(string $type, string $xmlId): ?array
     {
