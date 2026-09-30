@@ -27,6 +27,7 @@ final class CatalogPropertySelfCheck
                 'PROPERTY_TYPE' => 'property_type_mismatch',
                 'USER_TYPE' => 'property_user_type_mismatch',
                 'MULTIPLE' => 'property_multiple_mismatch',
+                'IS_REQUIRED' => 'property_required_mismatch',
             ] as $field => $errorCode) {
                 if (($actual[$field] ?? null) !== $expected[$field]) {
                     $errors[] = ['code' => $errorCode, 'property' => $code, 'expected' => $expected[$field], 'actual' => $actual[$field] ?? null];

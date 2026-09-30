@@ -8,6 +8,8 @@ use RuntimeException;
 
 final class BitrixCatalogPropertyGateway implements CatalogPropertyGatewayInterface
 {
+    public const PROPERTY_VALUE_ORDER = ['sort' => 'asc', 'id' => 'asc', 'value_id' => 'asc'];
+
     public function iblockExists(int $iblockId): bool
     {
         return (bool)\CIBlock::GetByID($iblockId)->Fetch();
@@ -40,7 +42,7 @@ final class BitrixCatalogPropertyGateway implements CatalogPropertyGatewayInterf
     public function values(int $iblockId, int $productId, string $code): array
     {
         $result = [];
-        $rows = \CIBlockElement::GetProperty($iblockId, $productId, ['sort' => 'asc', 'id' => 'asc'], ['CODE' => $code]);
+        $rows = \CIBlockElement::GetProperty($iblockId, $productId, self::PROPERTY_VALUE_ORDER, ['CODE' => $code]);
         while ($row = $rows->Fetch()) {
             $value = trim((string)($row['VALUE'] ?? ''));
             if ($value !== '') {

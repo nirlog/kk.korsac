@@ -18,6 +18,7 @@ use KK\Korsac\Install\SchemaMigrationService;
 use KK\Korsac\Install\SqlIndexBuilder;
 use KK\Korsac\Repository\OptionTypeRegistry;
 use KK\Korsac\Catalog\CatalogPropertyGatewayInterface;
+use KK\Korsac\Catalog\BitrixCatalogPropertyGateway;
 use KK\Korsac\Catalog\CatalogPropertyInstaller;
 use KK\Korsac\Catalog\CatalogPropertySchema;
 use KK\Korsac\Catalog\CatalogPropertySelfCheck;
@@ -91,6 +92,11 @@ $test('catalog schema generates twenty-two directory properties', static functio
     $assert($properties['KK_SERVICE_MULTI_OPTIONS']['MULTIPLE'] === 'Y');
     foreach ($properties as $property) { $assert($property['PROPERTY_TYPE'] === 'S'); $assert($property['USER_TYPE'] === 'directory'); $assert($property['IS_REQUIRED'] === 'N'); }
 });
+$test('Bitrix property reads use stable multiple value ordering', static function () use ($assert): void {
+    $assert(BitrixCatalogPropertyGateway::PROPERTY_VALUE_ORDER === ['sort'=>'asc', 'id'=>'asc', 'value_id'=>'asc']);
+    $source = file_get_contents(dirname(__DIR__, 2) . '/lib/Catalog/BitrixCatalogPropertyGateway.php');
+    $assert(str_contains((string)$source, 'GetProperty($iblockId, $productId, self::PROPERTY_VALUE_ORDER'));
+});
 $test('catalog property installer is idempotent and rejects conflicts', static function () use ($assert, $fakeCatalogGateway): void {
     $gateway = $fakeCatalogGateway(); $installer = new CatalogPropertyInstaller($gateway);
     $assert($installer->installWithResult(123) === ['created'=>22, 'existing'=>0]);
@@ -98,7 +104,7 @@ $test('catalog property installer is idempotent and rejects conflicts', static f
     $assert($installer->installWithResult(123) === ['created'=>0, 'existing'=>22]);
     $assert($gateway->writes === $writes);
     foreach ([
-        ['MULTIPLE', 'N'], ['USER_TYPE', 'String'], ['USER_TYPE_SETTINGS', ['TABLE_NAME'=>'b_wrong']],
+        ['MULTIPLE', 'N'], ['USER_TYPE', 'String'], ['IS_REQUIRED', 'Y'], ['USER_TYPE_SETTINGS', ['TABLE_NAME'=>'b_wrong']],
     ] as [$field, $value]) {
         $broken = $fakeCatalogGateway(); $broken->properties = CatalogPropertySchema::properties(); $broken->properties['KK_RAM_OPTIONS'][$field] = $value;
         try { (new CatalogPropertyInstaller($broken))->install(123); } catch (RuntimeException) { continue; }
@@ -110,9 +116,12 @@ $test('catalog property self-check emits actionable mismatches', static function
     unset($gateway->properties['KK_CPU_DEFAULT']);
     $gateway->properties['KK_RAM_OPTIONS']['MULTIPLE'] = 'N';
     $gateway->properties['KK_GPU_DEFAULT']['USER_TYPE'] = '';
+    $gateway->properties['KK_HDD_DEFAULT']['IS_REQUIRED'] = 'Y';
     $gateway->properties['KK_SERVICE_MULTI_OPTIONS']['USER_TYPE_SETTINGS']['TABLE_NAME'] = 'b_wrong';
     $errors = (new CatalogPropertySelfCheck($gateway))->run(123)['errors'];
-    foreach (['missing_property','property_multiple_mismatch','property_user_type_mismatch','property_directory_mismatch'] as $code) $assert(in_array($code, array_column($errors, 'code'), true), $code);
+    foreach (['missing_property','property_multiple_mismatch','property_user_type_mismatch','property_required_mismatch','property_directory_mismatch'] as $code) $assert(in_array($code, array_column($errors, 'code'), true), $code);
+    $required = array_values(array_filter($errors, static fn(array $error): bool => $error['code'] === 'property_required_mismatch'));
+    $assert($required === [['code'=>'property_required_mismatch','property'=>'KK_HDD_DEFAULT','expected'=>'N','actual'=>'Y']]);
 });
 $test('product configuration supports optional defaults and preserves order', static function () use ($assert): void {
     $values = ['KK_CPU_DEFAULT'=>['CPU_A'], 'KK_HDD_OPTIONS'=>['HDD_4','HDD_2'], 'KK_SOFTWARE_MULTI_OPTIONS'=>['SW_B','SW_A']];

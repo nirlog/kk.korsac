@@ -44,7 +44,7 @@ final class CatalogPropertyInstaller
     private function compatibilityErrors(array $actual, array $expected): array
     {
         $errors = [];
-        foreach (['CODE', 'PROPERTY_TYPE', 'USER_TYPE', 'MULTIPLE'] as $field) {
+        foreach (['CODE', 'PROPERTY_TYPE', 'USER_TYPE', 'MULTIPLE', 'IS_REQUIRED'] as $field) {
             if (($actual[$field] ?? null) !== $expected[$field]) {
                 $errors[] = "expected {$field}={$expected[$field]}, actual {$field}=" . ($actual[$field] ?? 'NULL');
             }
