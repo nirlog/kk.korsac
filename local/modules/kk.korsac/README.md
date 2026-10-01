@@ -49,12 +49,13 @@ php local/modules/kk.korsac/tools/catalog.php check-properties --iblock=<ID>
 ## Configuration pricing
 
 Pricing layer валидирует `ConfigurationSelection` строго по whitelist из
-`ProductConfiguration`, читает абсолютные `UF_PRICE` через
-`HlOptionPriceProvider` и возвращает объяснимый `ConfigurationPriceResult`.
+`ProductConfiguration`. `HlOptionPriceProvider` остаётся raw provider: hardware
+`UF_PRICE` является procurement cost, а OS/SOFTWARE/SERVICE уже direct retail.
+`RetailOptionPriceProvider` применяет configured markup только к hardware.
 Деньги после границы HL представлены только целыми minor units (копейками).
 Цена DEFAULT-конфигурации передаётся `ConfigurationPriceCalculator` извне как
 `basePriceMinor`: этот calculator не выводит её из options и считает только
-delta пользовательского выбора. Модуль не читает и не обновляет Catalog price
+delta пользовательского выбора. Модуль читает явно configured Catalog price type, но не обновляет Catalog price
 и не применяет скидки. Весь pricing path read-only.
 
 ```bash
@@ -67,6 +68,18 @@ php local/modules/kk.korsac/tests/Integration/configuration_pricing_smoke.php \
 ```
 
 Подробности и формулы: [`KORSAC-CONFIGURATION-PRICING.md`](../../../docs/architecture/KORSAC-CONFIGURATION-PRICING.md).
+
+```bash
+php local/modules/kk.korsac/tools/pricing.php configure \
+  --iblock=2 --channel=RETAIL --price-type=1 \
+  --markup-bps=2000 --fixed-adjustment-minor=0
+php local/modules/kk.korsac/tools/pricing.php show --iblock=2 --channel=RETAIL
+```
+
+Bitrix `BASE=Y` не является KORSAC price-selection rule. Browser не может
+выбирать RETAIL/BUSINESS, price type или policy. До отдельного обновления
+`kk.price-update` Catalog prices могут временно отражать старую формулу;
+`kk.korsac` не переписывает их автоматически.
 
 ## Default component cost
 
@@ -98,8 +111,8 @@ php local/modules/kk.korsac/tests/Integration/default_configuration_cost_smoke.p
 
 Read-only storefront actions `kk:korsac.Configurator.get` (GET) and
 `kk:korsac.Configurator.calculate` (POST) always read the current product
-whitelist, option prices and Bitrix Catalog BASE price. The browser cannot
-choose a price type. Public payloads contain deltas but never `UF_PRICE` or
+whitelist, retail-normalized option prices and the server-configured RETAIL
+Catalog price type. The browser cannot choose a channel or price type. Public payloads contain deltas but never `UF_PRICE` or
 absolute component prices.
 
 ```javascript

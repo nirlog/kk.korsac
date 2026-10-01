@@ -5,10 +5,11 @@ declare(strict_types=1);
 use Bitrix\Main\Loader;
 use KK\Korsac\Catalog\BitrixCatalogPropertyGateway;
 use KK\Korsac\Catalog\ProductConfigurationRepository;
-use KK\Korsac\Configurator\BitrixCatalogBasePriceProvider;
+use KK\Korsac\Configurator\BitrixCatalogPriceProvider;
 use KK\Korsac\Configurator\ConfiguratorService;
 use KK\Korsac\Configurator\HlOptionViewProvider;
-use KK\Korsac\Pricing\ConfigurationPriceCalculator;
+use KK\Korsac\Pricing\BitrixPricingPolicyProvider;
+use KK\Korsac\Pricing\ConfiguredCatalogPriceTypeResolver;
 use KK\Korsac\Pricing\HlOptionPriceProvider;
 use KK\Korsac\Repository\OptionRepository;
 
@@ -38,16 +39,16 @@ try {
     $options = new OptionRepository();
     $service = new ConfiguratorService(
         new ProductConfigurationRepository(new BitrixCatalogPropertyGateway(), $options),
-        new BitrixCatalogBasePriceProvider(),
+        new BitrixCatalogPriceProvider(),
         new HlOptionViewProvider($options),
-        new ConfigurationPriceCalculator(new HlOptionPriceProvider($options)),
+        new HlOptionPriceProvider($options),
+        new ConfiguredCatalogPriceTypeResolver(),
+        new BitrixPricingPolicyProvider(),
     );
     $result = $selection === [] ? $service->get((int)$iblockId, (int)$productId) : $service->calculate((int)$iblockId, (int)$productId, $selection);
     if ($selection === [] && count($result['groups']) !== 12) { throw new RuntimeException('Expected all 12 canonical groups'); }
-    $expectedDelta = $selection === [] ? 0 : 1630000;
-    $expectedFinal = $selection === [] ? 3099000 : 4729000;
-    if ($result['price']['basePriceMinor'] !== 3099000 || $result['price']['configurationDeltaMinor'] !== $expectedDelta || $result['price']['finalPriceMinor'] !== $expectedFinal) {
-        throw new RuntimeException('Unexpected smoke-test prices');
+    if ($result['price']['finalPriceMinor'] !== $result['price']['basePriceMinor'] + $result['price']['configurationDeltaMinor']) {
+        throw new RuntimeException('Final price does not equal configured Catalog price plus retail delta');
     }
     echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), PHP_EOL;
 } catch (Throwable $error) {

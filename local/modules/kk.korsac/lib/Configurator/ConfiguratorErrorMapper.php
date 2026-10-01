@@ -10,7 +10,11 @@ final class ConfiguratorErrorMapper
     public function map(array $diagnostic): array
     {
         $messages = [
-            'product_not_found' => 'Product not found', 'catalog_base_price_not_found' => 'Catalog base price not found',
+            'product_not_found' => 'Product not found', 'catalog_price_not_found' => 'Catalog price not found',
+            'catalog_base_price_not_found' => 'Catalog price not found',
+            'catalog_price_type_not_configured' => 'Catalog price type is not configured',
+            'pricing_policy_not_configured' => 'Pricing policy is not configured',
+            'invalid_pricing_policy' => 'Pricing policy is invalid',
             'unsupported_catalog_currency' => 'Catalog currency is not supported', 'invalid_request' => 'Invalid request',
             'option_not_allowed' => 'Selected option is not allowed', 'unknown_configuration_group' => 'Unknown configuration group',
             'invalid_single_selection' => 'Invalid single selection', 'invalid_multiple_selection' => 'Invalid multiple selection',

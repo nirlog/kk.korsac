@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace KK\Korsac\Configurator;
 
-final readonly class CatalogBasePrice
+final readonly class CatalogPrice
 {
     public function __construct(
         public int $priceTypeId,

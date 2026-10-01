@@ -4,11 +4,11 @@
 
 `ProductConfiguration` is the current product whitelist: it says what may be
 selected. `ConfigurationSelection` is the normalized user choice, validated
-against that whitelist. The Bitrix Catalog BASE price is the price of the
+against that whitelist. The explicitly configured RETAIL Catalog price is the price of the
 DEFAULT system. `ConfigurationPriceCalculator` computes only the change from
 DEFAULT. The Configurator API is the public, safe projection of these values.
 
-Every request re-reads product properties, option rows and Catalog BASE price.
+Every request resolves server-side RETAIL policy and re-reads product properties, option rows and the explicit Catalog price type.
 The browser is never authoritative. The API is read-only and does not maintain
 prices, properties, baskets or orders.
 
@@ -28,7 +28,8 @@ handling still apply.
 ## Pricing and data exposure
 
 All money crosses the Catalog/HL boundary through `PriceNormalizer` and remains
-integer minor units. Choice deltas and the final delta both come from the same
+integer minor units. Hardware is marked up from procurement while OS, SOFTWARE,
+and SERVICE remain direct retail. Choice deltas and the final delta both come from the same
 `ConfigurationPriceCalculator`. Public prices contain only the Catalog price
 identity, base, delta, final, and (for calculate) group deltas.
 
@@ -52,5 +53,4 @@ php local/modules/kk.korsac/tests/Integration/configurator_api_smoke.php \
   --selection-json='{"HDD":"2 ТБ, 5400 rpm","SOFTWARE":["Microsoft Office (Trial)"]}'
 ```
 
-The fixture-specific assertions are respectively `3,099,000` minor base,
-zero/default delta and `1,630,000` selected delta with `4,729,000` final.
+The smoke resolves current server configuration and verifies that final price is the configured Catalog price plus the policy-normalized retail delta.

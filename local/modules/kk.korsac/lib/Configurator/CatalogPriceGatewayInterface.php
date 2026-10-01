@@ -7,5 +7,5 @@ namespace KK\Korsac\Configurator;
 interface CatalogPriceGatewayInterface
 {
     /** @return array{priceTypeId:int,price:mixed,currency:string}|null */
-    public function findBasePrice(int $productId): ?array;
+    public function findPrice(int $productId, int $priceTypeId): ?array;
 }

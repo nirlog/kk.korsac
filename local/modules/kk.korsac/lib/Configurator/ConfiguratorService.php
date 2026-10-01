@@ -9,21 +9,28 @@ use KK\Korsac\Catalog\ProductConfiguration;
 use KK\Korsac\Catalog\ProductConfigurationRepository;
 use KK\Korsac\Pricing\ConfigurationPriceCalculator;
 use KK\Korsac\Pricing\ConfigurationSelection;
+use KK\Korsac\Pricing\CatalogPriceTypeResolverInterface;
+use KK\Korsac\Pricing\OptionPriceProviderInterface;
+use KK\Korsac\Pricing\PriceChannel;
+use KK\Korsac\Pricing\PricingPolicyProviderInterface;
+use KK\Korsac\Pricing\RetailOptionPriceProvider;
 
 final class ConfiguratorService
 {
     public function __construct(
         private readonly ProductConfigurationRepository $configurations,
-        private readonly CatalogBasePriceProviderInterface $basePrices,
+        private readonly CatalogPriceProviderInterface $catalogPrices,
         private readonly OptionViewProviderInterface $optionViews,
-        private readonly ConfigurationPriceCalculator $calculator,
+        private readonly OptionPriceProviderInterface $rawOptionPrices,
+        private readonly CatalogPriceTypeResolverInterface $priceTypes,
+        private readonly PricingPolicyProviderInterface $policies,
     ) {}
 
     public function get(int $iblockId, int $productId): array
     {
-        [$configuration, $basePrice] = $this->currentState($iblockId, $productId);
+        [$configuration, $basePrice, $calculator] = $this->currentState($iblockId, $productId);
         $selection = ConfigurationSelection::fromArray($configuration, []);
-        $calculation = $this->calculator->calculate($configuration, $selection, $basePrice->priceMinor)->toArray();
+        $calculation = $calculator->calculate($configuration, $selection, $basePrice->priceMinor)->toArray();
         $groups = [];
         foreach ($configuration->toArray() as $group => $definition) {
             $choices = $definition['mode'] === 'single'
@@ -32,7 +39,7 @@ final class ConfiguratorService
             $projectedChoices = [];
             foreach ($choices as $xmlId) {
                 $candidate = ConfigurationSelection::fromArray($configuration, [$group => $definition['mode'] === 'single' ? $xmlId : [$xmlId]]);
-                $candidateResult = $this->calculator->calculate($configuration, $candidate, $basePrice->priceMinor)->toArray();
+                $candidateResult = $calculator->calculate($configuration, $candidate, $basePrice->priceMinor)->toArray();
                 $view = $this->optionViews->get($group, $xmlId);
                 $projectedChoices[] = [
                     'xmlId' => $view->xmlId,
@@ -58,9 +65,9 @@ final class ConfiguratorService
 
     public function calculate(int $iblockId, int $productId, array $selection): array
     {
-        [$configuration, $basePrice] = $this->currentState($iblockId, $productId);
+        [$configuration, $basePrice, $calculator] = $this->currentState($iblockId, $productId);
         $normalized = ConfigurationSelection::fromArray($configuration, $selection);
-        $calculation = $this->calculator->calculate($configuration, $normalized, $basePrice->priceMinor)->toArray();
+        $calculation = $calculator->calculate($configuration, $normalized, $basePrice->priceMinor)->toArray();
         return [
             'product' => ['iblockId' => $iblockId, 'productId' => $productId],
             'selection' => $normalized->toArray(),
@@ -78,10 +85,17 @@ final class ConfiguratorService
         } catch (InvalidArgumentException) {
             throw new ConfiguratorException(['code' => 'product_not_found', 'iblockId' => $iblockId, 'productId' => $productId]);
         }
-        return [$configuration, $this->basePrices->get($productId)];
+        $priceTypeId = $this->priceTypes->resolve($iblockId, PriceChannel::RETAIL);
+        $policy = $this->policies->get($iblockId, $priceTypeId);
+        $retailPrices = new RetailOptionPriceProvider($this->rawOptionPrices, $policy);
+        return [
+            $configuration,
+            $this->catalogPrices->get($productId, $priceTypeId),
+            new ConfigurationPriceCalculator($retailPrices),
+        ];
     }
 
-    private function publicPrice(CatalogBasePrice $base, array $calculation, bool $withGroups): array
+    private function publicPrice(CatalogPrice $base, array $calculation, bool $withGroups): array
     {
         $price = [
             'priceTypeId' => $base->priceTypeId,

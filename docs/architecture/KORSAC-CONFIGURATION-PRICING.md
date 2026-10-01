@@ -1,97 +1,45 @@
-# KORSAC configuration pricing
+# KORSAC pricing policy v1
 
-## Architecture and responsibility
+## Price meanings
 
-```text
-Catalog Base Price
-       +
-ProductConfiguration
-       +
-ConfigurationSelection
-       ↓
-ConfigurationPriceCalculator
-       ↓
-OptionPriceProvider
-       ↓
-KORSAC HL UF_PRICE
-       ↓
-ConfigurationPriceResult
-```
+`HlOptionPriceProvider` is the raw `UF_PRICE` boundary. It normalizes the DB decimal to integer minor units and does not apply policy. Raw hardware prices (`CPU`, `GPU`, `MB`, `RAM`, `SSD`, `HDD`, `PSU`, `COOLER`, `CASE`) are procurement costs. Raw `OS`, `SOFTWARE`, and `SERVICE` prices are direct retail contributions. `OptionPricingModeRegistry` is the single authoritative mapping.
 
-`ProductConfiguration` is the product-owned whitelist. A raw associative array
-is converted to `ConfigurationSelection` before calculation; unknown groups,
-wrong value shapes, duplicate multiple values, and options outside the whitelist
-are rejected with a structured `ConfigurationPricingException` diagnostic.
-Missing single groups select their default and missing multiple groups select an
-empty list. An explicit `null` is allowed only when the single group's default is
-`null`. The normalized selection retains the configuration snapshot used for
-validation. Before reading any option price, the calculator rejects use with a
-different snapshot as `selection_configuration_mismatch`; an independently
-created but structurally equivalent `ProductConfiguration` remains compatible.
-
-The current Catalog price for the DEFAULT configuration is supplied by the
-caller as `basePriceMinor`. The calculator does not read or write Catalog,
-integrate with `kk.price-update`, derive the base price from option rows, apply
-discounts, or persist its result. Pricing is entirely read-only.
-
-## Money boundary
-
-All domain amounts are `int` RUB minor units (kopecks). `UF_PRICE` remains a
-Bitrix `double` with precision 2. `HlOptionPriceProvider` converts that value
-once with `PriceNormalizer` and caches the resulting integer by group and XML ID
-for the lifetime of the provider. Missing rows and missing, malformed, or
-negative prices are errors. No floating-point value enters breakdown or total
-arithmetic.
-
-## Formulas
-
-For a single group with a non-null default:
+`RetailOptionPriceProvider` converts procurement amounts with the configured hardware markup and passes direct-retail amounts through unchanged. Markup is integer-only, in basis points, with deterministic half-up rounding:
 
 ```text
-singleDelta = selectedPrice - defaultPrice
+retail hardware = procurement + ROUND_HALF_UP(procurement * markupBps / 10000)
+retail OS/software/service = raw UF_PRICE
 ```
 
-This permits both upgrades and downgrades without negative option prices. If
-selected equals default, the delta is zero. For an optional single:
+Overflow produces `price_overflow`. `ConfigurationPriceCalculator` remains policy-agnostic and computes `retail(selected) - retail(default)`, optional single contributions, and multiple contributions from normalized retail prices. The fixed system adjustment is therefore never part of an option delta.
+
+`DefaultConfigurationCostCalculator` retains its provider-defined component-cost semantics; with `HlOptionPriceProvider` it is raw default cost. `DefaultCatalogPriceCalculator` instead sums retail prices of non-null single defaults (including direct-retail OS), excludes multiple `SOFTWARE` and `SERVICE`, and adds `systemFixedAdjustmentMinor` exactly once. Its result contains groups, `componentsRetailMinor`, the adjustment, and total. It does not write Catalog prices.
+
+## Server-side price context
+
+Public Configurator requests contain only `iblockId`, `productId`, and (for calculate) `selection`. The server fixes the channel to `RETAIL`; the browser cannot provide a channel, price type, markup, or policy. `BUSINESS` is a canonical reserved channel that can be mapped later without changing the API.
+
+Bitrix module options use these deterministic keys:
 
 ```text
-optionalSingleDelta = selectedPrice - 0
+pricing.price_type.<iblockId>.<channel>
+pricing.policy.<iblockId>.<priceTypeId>.markup_bps
+pricing.policy.<iblockId>.<priceTypeId>.fixed_adjustment_minor
 ```
 
-When both default and selected are `null`, both prices and delta are zero. For a
-multiple group:
-
-```text
-multipleDelta = SUM(selected option prices)
-```
-
-Totals are:
-
-```text
-configurationDelta = SUM(single deltas) + SUM(multiple deltas)
-finalPrice = baseProductPrice + configurationDelta
-```
-
-A negative base price and a negative final price are rejected. The result lists
-every configuration group, including zero-delta groups, and includes default,
-selected, per-option prices, and group deltas as applicable.
-
-## Read-only integration smoke
+The explicit `(iblock, channel)` mapping resolves a Catalog price type, and `(iblock, priceTypeId)` resolves its policy. Missing data fails as `catalog_price_type_not_configured` or `pricing_policy_not_configured`. There is no fallback to price type 1 and **Bitrix `BASE=Y` is not a KORSAC price-selection rule**. A configured `BASE=N` type is valid. Catalog reads use `PRODUCT_ID` plus the explicit `CATALOG_GROUP_ID`; RUB remains the only supported currency.
 
 ```bash
-php local/modules/kk.korsac/tests/Integration/configuration_pricing_smoke.php \\
-  --iblock=2 --product=4 --base-price-minor=15000000
+php local/modules/kk.korsac/tools/pricing.php configure \
+  --iblock=2 --channel=RETAIL --price-type=1 \
+  --markup-bps=2000 --fixed-adjustment-minor=0
+php local/modules/kk.korsac/tools/pricing.php show --iblock=2 --channel=RETAIL
+php local/modules/kk.korsac/tests/Integration/pricing_policy_smoke.php \
+  --iblock=2 --product=4 --channel=RETAIL
 ```
 
-With no selection, every single group remains at its default and multiple groups
-are empty, so the delta must be zero. To exercise alternatives:
+The CLI verifies that the type exists but does not require `BASE=Y`, writes only KORSAC options, and never updates Catalog or HL prices. The smoke is read-only.
 
-```bash
-php local/modules/kk.korsac/tests/Integration/configuration_pricing_smoke.php \\
-  --iblock=2 --product=4 --base-price-minor=15000000 \\
-  --selection-json='{"HDD":"HDD_2TB","SOFTWARE":["SOFTWARE_OFFICE"]}'
-```
+## Transitional consistency warning
 
-The required arguments are validated before Bitrix is loaded; missing or invalid
-arguments exit with status 2. The script only reads product properties and HL
-rows and never changes products, properties, option rows, or Catalog prices.
+This module never writes Catalog prices. Until the follow-up `kk.price-update` change consumes `DefaultCatalogPriceCalculator` and `PricingPolicy`, an existing Catalog price may still have been generated from raw defaults plus the old adjustment while Configurator correctly returns policy-normalized retail deltas. Operators must account for this temporary mismatch; this PR does not modify `kk.price-update` or silently rebuild prices.
