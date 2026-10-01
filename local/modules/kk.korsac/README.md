@@ -93,3 +93,44 @@ php local/modules/kk.korsac/tests/Integration/default_configuration_cost_smoke.p
 ## Ограничения
 
 Интеграционные scripts требуют реальной Bitrix-среды. Bitrix UF не предоставляет переносимый DB default `now`, поэтому timestamps заполняет server-side write layer. Frontend, catalog base-price recalculation, basket/order, supplier/stock integrations, compatibility engine и admin CRUD не входят в pricing layer.
+
+## Public Configurator API v1
+
+Read-only storefront actions `kk:korsac.Configurator.get` (GET) and
+`kk:korsac.Configurator.calculate` (POST) always read the current product
+whitelist, option prices and explicitly configured Catalog price. The browser cannot
+choose a price type. Public payloads contain deltas but never `UF_PRICE` or
+absolute component prices.
+
+```javascript
+BX.ajax.runAction('kk:korsac.Configurator.get', {
+    getParameters: {iblockId: 2, productId: 4}
+});
+
+BX.ajax.runAction('kk:korsac.Configurator.calculate', {
+    data: {
+        iblockId: 2,
+        productId: 4,
+        selection: {HDD: '2 ТБ, 5400 rpm', SOFTWARE: ['Microsoft Office (Trial)']}
+    }
+});
+```
+
+Architecture, exposure rules, errors and smoke instructions:
+[`KORSAC-CONFIGURATOR-API.md`](../../../docs/architecture/KORSAC-CONFIGURATOR-API.md).
+
+## Pricing policy
+
+Hardware `UF_PRICE` values are procurement costs; OS, SOFTWARE and SERVICE are
+direct-retail contributions. Configurator resolves the RETAIL Catalog price type
+and policy from server-side `kk.korsac` Options—never from browser parameters or
+Bitrix `BASE=Y`—then exposes retail deltas. Configure and inspect it with:
+
+```bash
+php local/modules/kk.korsac/tools/pricing.php configure \
+  --iblock=2 --channel=RETAIL --price-type=1 \
+  --markup-bps=2000 --fixed-adjustment-minor=0
+php local/modules/kk.korsac/tools/pricing.php show --iblock=2 --channel=RETAIL
+```
+
+See [`KORSAC-PRICING-POLICY.md`](../../../docs/architecture/KORSAC-PRICING-POLICY.md).
