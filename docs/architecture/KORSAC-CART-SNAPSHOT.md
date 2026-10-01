@@ -39,6 +39,9 @@ php local/modules/kk.korsac/tests/Integration/cart_add_smoke.php --iblock=2 --pr
 ```
 
 Without `--confirm-write`, the mutating smoke exits before loading Bitrix or writing data. It never creates an Order.
+With confirmation it reloads the saved item from the current FUSER/site Basket and verifies the persisted product, price,
+currency, quantity, `CUSTOM_PRICE`, and exact property codes/values. It also reloads the snapshot row and verifies its
+key, hash, payload hash, and final unit price against the Cart response; it does not merely re-project in-memory data.
 
 ## v1 limitations
 

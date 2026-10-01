@@ -85,9 +85,13 @@ $test('snapshot SQL migration is idempotent and non destructive',static function
 
 $test('cart public mapper hides internals and controller keeps POST CSRF defaults with anonymous access',static function()use($assert):void{
     $mapper=new CartErrorMapper();$assert($mapper->map(['code'=>'sql_secret','message'=>'leak'])===['code'=>'internal_error','message'=>'Internal error','customData'=>[]]);
+    $assert($mapper->map(['code'=>'unsupported_catalog_currency','currency'=>'USD'])===['code'=>'unsupported_currency','message'=>'Currency is not supported','customData'=>['currency'=>'USD']]);
+    foreach(['invalid_pricing_policy','price_option_not_found','invalid_option_price','negative_option_price','price_overflow','negative_final_price'] as $code)$assert($mapper->map(['code'=>$code])['code']===$code,$code);
     $source=(string)file_get_contents(dirname(__DIR__,2).'/lib/Controller/Cart.php');
     $assert(str_contains($source,'HttpMethod::METHOD_POST')&&str_contains($source,'Authentication::class'));
     $assert(!str_contains($source,'Csrf::class')&&!str_contains($source,"'-prefilters' => [Csrf"));
     $gateway=(string)file_get_contents(dirname(__DIR__,2).'/lib/Cart/BitrixBasketGateway.php');
     $assert(str_contains($gateway,"'CUSTOM_PRICE'=>'Y'")&&str_contains($gateway,'Fuser::getId()'));
+    $smoke=(string)file_get_contents(dirname(__DIR__).'/Integration/cart_add_smoke.php');
+    foreach(['Basket::loadItemsForFUser','getPropertyCollection()','CUSTOM_PRICE','snapshotFinalPrice','hash(\'sha256\', $stored->payload)'] as $needle)$assert(str_contains($smoke,$needle),$needle);
 });

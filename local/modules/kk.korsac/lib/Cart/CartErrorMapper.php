@@ -9,16 +9,23 @@ final class CartErrorMapper
         'basket_save_failed'=>'Basket item could not be stored','unsupported_currency'=>'Currency is not supported','option_not_allowed'=>'Selected option is not allowed',
         'unknown_configuration_group'=>'Unknown configuration group','invalid_single_selection'=>'Invalid single selection','invalid_multiple_selection'=>'Invalid multiple selection',
         'duplicate_selected_option'=>'Duplicate selected option','null_not_allowed'=>'Empty selection is not allowed','catalog_price_type_not_configured'=>'Catalog price type is not configured',
-        'pricing_policy_not_configured'=>'Pricing policy is not configured','catalog_price_not_found'=>'Catalog price was not found','internal_error'=>'Internal error',
+        'pricing_policy_not_configured'=>'Pricing policy is not configured','catalog_price_not_found'=>'Catalog price was not found',
+        'invalid_pricing_policy'=>'Pricing policy is invalid','price_option_not_found'=>'Option price was not found',
+        'invalid_option_price'=>'Option price is invalid','negative_option_price'=>'Option price is negative',
+        'price_overflow'=>'Price overflow','negative_final_price'=>'Final price is negative','internal_error'=>'Internal error',
     ];
     public function map(array $diagnostic): array
     {
         $code = (string)($diagnostic['code'] ?? 'internal_error');
+        if ($code === 'unsupported_catalog_currency') {
+            $code = 'unsupported_currency';
+        }
         if (!isset(self::MESSAGES[$code])) $code = 'internal_error';
         $custom = [];
-        if (in_array($code, ['option_not_allowed','unknown_configuration_group','invalid_single_selection','invalid_multiple_selection','duplicate_selected_option','null_not_allowed'], true)) {
+        if (in_array($code, ['option_not_allowed','unknown_configuration_group','invalid_single_selection','invalid_multiple_selection','duplicate_selected_option','null_not_allowed','price_option_not_found','invalid_option_price','negative_option_price'], true)) {
             foreach (['group','xmlId'] as $key) if (isset($diagnostic[$key]) && is_string($diagnostic[$key])) $custom[$key]=$diagnostic[$key];
         }
+        if ($code === 'unsupported_currency' && isset($diagnostic['currency']) && is_string($diagnostic['currency'])) $custom['currency']=$diagnostic['currency'];
         return ['code'=>$code,'message'=>self::MESSAGES[$code],'customData'=>$custom];
     }
 }
