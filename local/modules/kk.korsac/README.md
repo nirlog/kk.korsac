@@ -52,9 +52,10 @@ Pricing layer валидирует `ConfigurationSelection` строго по wh
 `ProductConfiguration`, читает абсолютные `UF_PRICE` через
 `HlOptionPriceProvider` и возвращает объяснимый `ConfigurationPriceResult`.
 Деньги после границы HL представлены только целыми minor units (копейками).
-Цена DEFAULT-конфигурации передаётся calculator извне как `basePriceMinor`:
-модуль не читает и не обновляет Catalog price, не суммирует defaults и не
-применяет скидки. Весь pricing path read-only.
+Цена DEFAULT-конфигурации передаётся `ConfigurationPriceCalculator` извне как
+`basePriceMinor`: этот calculator не выводит её из options и считает только
+delta пользовательского выбора. Модуль не читает и не обновляет Catalog price
+и не применяет скидки. Весь pricing path read-only.
 
 ```bash
 php local/modules/kk.korsac/tests/Integration/configuration_pricing_smoke.php \
@@ -66,6 +67,28 @@ php local/modules/kk.korsac/tests/Integration/configuration_pricing_smoke.php \
 ```
 
 Подробности и формулы: [`KORSAC-CONFIGURATION-PRICING.md`](../../../docs/architecture/KORSAC-CONFIGURATION-PRICING.md).
+
+## Default component cost
+
+`DefaultConfigurationCostCalculator` вычисляет `DEFAULT_COMPONENT_COST` как
+сумму абсолютных цен только `default` всех single-групп. Пустой default даёт
+ноль без обращения к provider; alternatives, `SOFTWARE` и `SERVICE` не входят
+в сумму. Расчёт использует `OptionPriceProviderInterface`, поэтому с
+`HlOptionPriceProvider` автоматически работает существующий request-level
+cache. Результат содержит breakdown всех 12 групп и `totalMinor`.
+
+`DEFAULT_COMPONENT_COST` не является Bitrix Catalog price: будущая pricing
+policy может добавить к нему margin и adjustments, чтобы получить
+`BASE_CATALOG_PRICE`; итоговый пользовательский выбор затем изменяет base price
+через `ConfigurationPriceCalculator` delta. Calculator ничего не записывает.
+
+```bash
+php local/modules/kk.korsac/tests/Integration/default_configuration_cost_smoke.php \
+  --iblock=2 --product=4
+```
+
+Архитектура и границы ответственности описаны в
+[`KORSAC-DEFAULT-CONFIGURATION-COST.md`](../../../docs/architecture/KORSAC-DEFAULT-CONFIGURATION-COST.md).
 
 ## Ограничения
 

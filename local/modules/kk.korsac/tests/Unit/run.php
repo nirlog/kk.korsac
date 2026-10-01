@@ -28,6 +28,7 @@ use KK\Korsac\Catalog\PropertyCodeParser;
 use KK\Korsac\Pricing\ConfigurationPriceCalculator;
 use KK\Korsac\Pricing\ConfigurationPricingException;
 use KK\Korsac\Pricing\ConfigurationSelection;
+use KK\Korsac\Pricing\DefaultConfigurationCostCalculator;
 use KK\Korsac\Pricing\HlOptionPriceProvider;
 use KK\Korsac\Pricing\OptionPriceProviderInterface;
 use KK\Korsac\Pricing\PriceNormalizer;
@@ -154,7 +155,7 @@ $test('product configuration reports duplicate missing and inactive options', st
 $test('module bootstrap and CLI entrypoints are portable', static function () use ($assert): void {
     $namespaces = require __DIR__ . '/fixtures/load_module_include.php';
     $assert(realpath($namespaces['KK\\Korsac'] ?? '') === realpath(dirname(__DIR__, 2) . '/lib'));
-    foreach (['tools/schema.php', 'tools/catalog.php', 'tests/Integration/smoke.php', 'tests/Integration/install_smoke.php', 'tests/Integration/acceptance_smoke.php', 'tests/Integration/schema_v02_migration_smoke.php', 'tests/Integration/catalog_properties_smoke.php', 'tests/Integration/product_configuration_smoke.php', 'tests/Integration/configuration_pricing_smoke.php'] as $file) {
+    foreach (['tools/schema.php', 'tools/catalog.php', 'tests/Integration/smoke.php', 'tests/Integration/install_smoke.php', 'tests/Integration/acceptance_smoke.php', 'tests/Integration/schema_v02_migration_smoke.php', 'tests/Integration/catalog_properties_smoke.php', 'tests/Integration/product_configuration_smoke.php', 'tests/Integration/configuration_pricing_smoke.php', 'tests/Integration/default_configuration_cost_smoke.php'] as $file) {
         $source = file_get_contents(dirname(__DIR__, 2) . '/' . $file);
         $assert($source !== false, "Cannot read {$file}");
         $syncPosition = strpos($source, "\$_SERVER['DOCUMENT_ROOT'] = \$documentRoot;");
@@ -278,6 +279,55 @@ $pricingConfiguration = static function (): ProductConfiguration {
         'KK_SOFTWARE_MULTI_OPTIONS'=>['SOFTWARE_A','SOFTWARE_B'],
     ], static fn(string $group, string $id): array => ['UF_XML_ID'=>$id, 'UF_ACTIVE'=>1]);
 };
+$test('default configuration cost sums only single defaults and returns all groups', static function () use ($assert): void {
+    $configuration = ProductConfiguration::fromPropertyValues([
+        'KK_CPU_DEFAULT'=>['CPU_A'], 'KK_GPU_DEFAULT'=>['GPU_A'],
+        'KK_RAM_DEFAULT'=>['RAM_A'], 'KK_RAM_OPTIONS'=>['RAM_64','RAM_96'],
+        'KK_HDD_OPTIONS'=>['HDD_2TB'], 'KK_OS_DEFAULT'=>['OS_A'],
+        'KK_SOFTWARE_MULTI_OPTIONS'=>['OFFICE','ANTIVIRUS'],
+        'KK_SERVICE_MULTI_OPTIONS'=>['SETUP'],
+    ], static fn(string $group, string $id): array => ['UF_XML_ID'=>$id, 'UF_ACTIVE'=>1]);
+    $provider = new class implements OptionPriceProviderInterface {
+        public array $calls = [];
+        private array $prices = ['CPU_A'=>100000, 'GPU_A'=>200000, 'RAM_A'=>300000, 'OS_A'=>40000];
+        public function getPriceMinor(string $group, string $xmlId): int { $this->calls[] = [$group, $xmlId]; return $this->prices[$xmlId]; }
+    };
+    $resultObject = (new DefaultConfigurationCostCalculator($provider))->calculate($configuration);
+    $result = $resultObject->toArray();
+    $assert($result['totalMinor'] === 640000);
+    $assert(count($result['groups']) === 12);
+    $assert(array_keys($result['groups']) === ['CPU','GPU','MB','RAM','SSD','HDD','PSU','COOLER','CASE','OS','SOFTWARE','SERVICE']);
+    $assert($result['groups']['RAM'] === ['mode'=>'single','xmlId'=>'RAM_A','priceMinor'=>300000]);
+    $assert($result['groups']['HDD'] === ['mode'=>'single','xmlId'=>null,'priceMinor'=>0]);
+    $assert($result['groups']['SOFTWARE'] === ['mode'=>'multiple','included'=>false,'priceMinor'=>0]);
+    $assert($provider->calls === [['CPU','CPU_A'],['GPU','GPU_A'],['RAM','RAM_A'],['OS','OS_A']]);
+    $assert($resultObject->jsonSerialize() === $result);
+});
+$test('default configuration cost does not call provider for null defaults or multiple options', static function () use ($assert): void {
+    $configuration = ProductConfiguration::fromPropertyValues([
+        'KK_RAM_OPTIONS'=>['RAM_64','RAM_96'],
+        'KK_SOFTWARE_MULTI_OPTIONS'=>['OFFICE'],
+        'KK_SERVICE_MULTI_OPTIONS'=>['SETUP'],
+    ], static fn(string $group, string $id): array => ['UF_XML_ID'=>$id, 'UF_ACTIVE'=>1]);
+    $provider = new class implements OptionPriceProviderInterface {
+        public int $calls = 0;
+        public function getPriceMinor(string $group, string $xmlId): int { ++$this->calls; return 1; }
+    };
+    $result = (new DefaultConfigurationCostCalculator($provider))->calculate($configuration)->toArray();
+    $assert($result['totalMinor'] === 0);
+    $assert($provider->calls === 0);
+});
+$test('default configuration cost detects integer overflow', static function () use ($assert): void {
+    $configuration = ProductConfiguration::fromPropertyValues([
+        'KK_CPU_DEFAULT'=>['CPU_A'], 'KK_GPU_DEFAULT'=>['GPU_A'],
+    ], static fn(string $group, string $id): array => ['UF_XML_ID'=>$id, 'UF_ACTIVE'=>1]);
+    $provider = new class implements OptionPriceProviderInterface {
+        public function getPriceMinor(string $group, string $xmlId): int { return $group === 'CPU' ? PHP_INT_MAX : 1; }
+    };
+    try { (new DefaultConfigurationCostCalculator($provider))->calculate($configuration); }
+    catch (ConfigurationPricingException $error) { $assert($error->diagnostic() === ['code'=>'price_overflow']); return; }
+    throw new RuntimeException('Default cost overflow was not detected');
+});
 $test('price normalizer converts decimal boundary values without float arithmetic downstream', static function () use ($assert): void {
     foreach ([['1234.56',123456], ['1234.5',123450], ['1234',123400], [1234,123400], [1234.56,123456], [0,0], [0.01,1]] as [$value,$expected]) {
         $assert(PriceNormalizer::toMinor($value) === $expected);
