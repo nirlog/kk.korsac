@@ -14,10 +14,10 @@ prices, properties, baskets or orders.
 
 ## Actions
 
-* `kk:korsac.configurator.get` accepts GET `iblockId` and `productId` and
+* `kk:korsac.Configurator.get` accepts GET `iblockId` and `productId` and
   returns the normalized default selection, all 12 groups, public option
   metadata and price deltas.
-* `kk:korsac.configurator.calculate` accepts POST `iblockId`, `productId` and a
+* `kk:korsac.Configurator.calculate` accepts POST `iblockId`, `productId` and a
   partial `selection`; omitted groups normalize to their defaults.
 
 Both actions use the standard `BX.ajax.runAction()` response envelope. They do

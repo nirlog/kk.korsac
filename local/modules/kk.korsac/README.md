@@ -96,18 +96,18 @@ php local/modules/kk.korsac/tests/Integration/default_configuration_cost_smoke.p
 
 ## Public Configurator API v1
 
-Read-only storefront actions `kk:korsac.configurator.get` (GET) and
-`kk:korsac.configurator.calculate` (POST) always read the current product
+Read-only storefront actions `kk:korsac.Configurator.get` (GET) and
+`kk:korsac.Configurator.calculate` (POST) always read the current product
 whitelist, option prices and Bitrix Catalog BASE price. The browser cannot
 choose a price type. Public payloads contain deltas but never `UF_PRICE` or
 absolute component prices.
 
 ```javascript
-BX.ajax.runAction('kk:korsac.configurator.get', {
+BX.ajax.runAction('kk:korsac.Configurator.get', {
     getParameters: {iblockId: 2, productId: 4}
 });
 
-BX.ajax.runAction('kk:korsac.configurator.calculate', {
+BX.ajax.runAction('kk:korsac.Configurator.calculate', {
     data: {
         iblockId: 2,
         productId: 4,
