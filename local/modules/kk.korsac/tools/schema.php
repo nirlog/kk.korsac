@@ -7,6 +7,8 @@ use KK\Korsac\Health\SchemaSelfCheck;
 use KK\Korsac\Install\BitrixSchemaGateway;
 use KK\Korsac\Install\OptionMigrationStore;
 use KK\Korsac\Install\SchemaMigrationService;
+use KK\Korsac\Install\BitrixSnapshotTableGateway;
+use KK\Korsac\Install\SnapshotMigrationService;
 
 $documentRoot = ($_SERVER['DOCUMENT_ROOT'] ?? '') ?: dirname(__DIR__, 4);
 $_SERVER['DOCUMENT_ROOT'] = $documentRoot;
@@ -17,7 +19,8 @@ if (!Loader::includeModule('highloadblock') || !Loader::includeModule('kk.korsac
 $gateway = new BitrixSchemaGateway();
 $command = $argv[1] ?? 'check';
 if ($command === 'migrate') {
-    $applied = (new SchemaMigrationService(new OptionMigrationStore(), $gateway))->migrate();
+    $store = new OptionMigrationStore();
+    $applied = array_merge((new SchemaMigrationService($store, $gateway))->migrate(), (new SnapshotMigrationService($store, new BitrixSnapshotTableGateway()))->migrate());
     echo json_encode(['applied' => $applied], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), PHP_EOL;
     exit(0);
 }

@@ -7,6 +7,8 @@ use Bitrix\Main\ModuleManager;
 use KK\Korsac\Install\BitrixSchemaGateway;
 use KK\Korsac\Install\OptionMigrationStore;
 use KK\Korsac\Install\SchemaMigrationService;
+use KK\Korsac\Install\BitrixSnapshotTableGateway;
+use KK\Korsac\Install\SnapshotMigrationService;
 
 class kk_korsac extends CModule
 {
@@ -14,7 +16,7 @@ class kk_korsac extends CModule
     public $MODULE_VERSION;
     public $MODULE_VERSION_DATE;
     public $MODULE_NAME = 'KORSAC domain data';
-    public $MODULE_DESCRIPTION = 'KORSAC Highload-block schema and server-side read infrastructure.';
+    public $MODULE_DESCRIPTION = 'KORSAC configuration, pricing, immutable snapshots and configured Basket integration.';
     public $PARTNER_NAME = 'KORSAC';
     public $PARTNER_URI = '';
 
@@ -47,7 +49,9 @@ class kk_korsac extends CModule
             }
 
             $gateway = new BitrixSchemaGateway();
-            (new SchemaMigrationService(new OptionMigrationStore(), $gateway))->migrate();
+            $store = new OptionMigrationStore();
+            (new SchemaMigrationService($store, $gateway))->migrate();
+            (new SnapshotMigrationService($store, new BitrixSnapshotTableGateway()))->migrate();
         } catch (Throwable $exception) {
             if ($registeredHere) {
                 UnRegisterModule($this->MODULE_ID);

@@ -1,4 +1,4 @@
-# `kk.korsac` v0.2
+# `kk.korsac` v0.3
 
 Серверный Bitrix D7-модуль простых справочников KORSAC options. Требования: PHP 8.2+, Bitrix D7 `highloadblock`, поддерживаемый MySQL/MariaDB и права на создание индексов/удаление пустой legacy schema при migration.
 
@@ -105,7 +105,7 @@ php local/modules/kk.korsac/tests/Integration/default_configuration_cost_smoke.p
 
 ## Ограничения
 
-Интеграционные scripts требуют реальной Bitrix-среды. Bitrix UF не предоставляет переносимый DB default `now`, поэтому timestamps заполняет server-side write layer. Frontend, catalog base-price recalculation, basket/order, supplier/stock integrations, compatibility engine и admin CRUD не входят в pricing layer.
+Интеграционные scripts требуют реальной Bitrix-среды. Bitrix UF не предоставляет переносимый DB default `now`, поэтому timestamps заполняет server-side write layer. Frontend, catalog base-price recalculation, full checkout/payment/delivery, supplier/stock integrations, compatibility engine, SYSTEM ID и admin CRUD не входят в scope. Configured Basket integration and immutable order references are implemented separately from the pricing layer.
 
 ## Public Configurator API v1
 
@@ -131,3 +131,10 @@ BX.ajax.runAction('kk:korsac.Configurator.calculate', {
 
 Architecture, exposure rules, errors and smoke instructions:
 [`KORSAC-CONFIGURATOR-API.md`](../../../docs/architecture/KORSAC-CONFIGURATOR-API.md).
+
+
+## Configured Basket and immutable order snapshot
+
+`kk:korsac.Cart.add` accepts only `iblockId`, `productId`, and a partial `selection`. It shares `ConfiguredProductPricingService` with Configurator, creates a schema-v1 immutable snapshot in `b_kk_korsac_config_snapshot`, and adds a separate guest-FUSER Basket line at the authoritative custom unit price. Compact snapshot references and human-readable configuration properties flow to Order through standard Sale behavior. The `sale` module is required only when Cart is invoked.
+
+Apply the new table migration to an installed environment with `php local/modules/kk.korsac/tools/schema.php migrate`. See [`KORSAC-CART-SNAPSHOT.md`](../../../docs/architecture/KORSAC-CART-SNAPSHOT.md) for the persistence/property contract, compensation behavior, dry smoke, controlled write smoke, and limitations. Normal uninstall retains snapshots.
