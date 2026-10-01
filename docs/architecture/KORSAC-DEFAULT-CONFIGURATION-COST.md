@@ -14,11 +14,11 @@ These three amounts are intentionally different:
 DEFAULT_COMPONENT_COST
     = sum(default option prices)
 
-BASE_CATALOG_PRICE
-    = DEFAULT_COMPONENT_COST + pricing policy / margin / adjustments
+DEFAULT_CATALOG_PRICE
+    = sum(retail-normalized single defaults) + fixed system adjustment
 
 FINAL_CONFIGURATION_PRICE
-    = BASE_CATALOG_PRICE + ConfigurationPriceCalculator delta
+    = DEFAULT_CATALOG_PRICE + ConfigurationPriceCalculator retail delta
 ```
 
 ## Calculation

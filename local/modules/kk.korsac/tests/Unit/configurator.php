@@ -28,14 +28,22 @@ $configuratorFixture = static function (): array {
         public function __construct(private array $rows) {}
         public function findByTypeAndXmlId(string $type, string $xmlId): ?array { return $this->rows[$xmlId] ?? null; }
     };
-    $base = new class implements \KK\Korsac\Configurator\CatalogBasePriceProviderInterface {
-        public function get(int $productId): \KK\Korsac\Configurator\CatalogBasePrice { return new \KK\Korsac\Configurator\CatalogBasePrice(1, 'RUB', 3099000); }
+    $base = new class implements \KK\Korsac\Configurator\CatalogPriceProviderInterface {
+        public function get(int $productId, int $priceTypeId): \KK\Korsac\Configurator\CatalogPrice { return new \KK\Korsac\Configurator\CatalogPrice($priceTypeId, 'RUB', 3099000); }
+    };
+    $resolver = new class implements \KK\Korsac\Pricing\CatalogPriceTypeResolverInterface {
+        public function resolve(int $iblockId, string $channel): int { return 1; }
+    };
+    $policies = new class implements \KK\Korsac\Pricing\PricingPolicyProviderInterface {
+        public function get(int $iblockId, int $priceTypeId): \KK\Korsac\Pricing\PricingPolicy { return new \KK\Korsac\Pricing\PricingPolicy(2000, 0); }
     };
     return [new \KK\Korsac\Configurator\ConfiguratorService(
         new \KK\Korsac\Catalog\ProductConfigurationRepository($gateway, $repository),
         $base,
         new \KK\Korsac\Configurator\HlOptionViewProvider($repository),
-        new \KK\Korsac\Pricing\ConfigurationPriceCalculator(new \KK\Korsac\Pricing\HlOptionPriceProvider($repository)),
+        new \KK\Korsac\Pricing\HlOptionPriceProvider($repository),
+        $resolver,
+        $policies,
     ), $gateway];
 };
 
@@ -47,9 +55,9 @@ $test('configurator GET projects all groups metadata ordering and calculator del
     $assert($result['groups']['HDD']['allowNull'] === true && $result['groups']['SOFTWARE']['default'] === []);
     $assert($result['groups']['CPU']['choices'][0] === ['xmlId'=>'CPU_A','name'=>'Public CPU','description'=>'Fast','deltaMinor'=>0]);
     $assert($result['groups']['CPU']['choices'][1]['name'] === 'Fallback CPU' && $result['groups']['CPU']['choices'][1]['description'] === null);
-    $assert($result['groups']['RAM']['choices'][1]['deltaMinor'] === 10000);
-    $assert($result['groups']['RAM']['choices'][2]['deltaMinor'] === -10000);
-    $assert($result['groups']['HDD']['choices'][0]['deltaMinor'] === 1600000);
+    $assert($result['groups']['RAM']['choices'][1]['deltaMinor'] === 12000);
+    $assert($result['groups']['RAM']['choices'][2]['deltaMinor'] === -12000);
+    $assert($result['groups']['HDD']['choices'][0]['deltaMinor'] === 1920000);
     $assert($result['groups']['SOFTWARE']['choices'][0]['deltaMinor'] === 30000);
     $json = json_encode($result);
     foreach (['UF_PRICE','defaultPriceMinor','selectedPriceMinor','priceMinor'] as $forbidden) { $assert(!str_contains($json, $forbidden), "Leaked {$forbidden}"); }
@@ -59,23 +67,25 @@ $test('configurator calculate normalizes selection and exposes only public group
     [$service] = $configuratorFixture();
     $result = $service->calculate(2, 4, ['HDD'=>'HDD_2TB','SOFTWARE'=>['OFFICE']]);
     $assert($result['selection']['CPU'] === 'CPU_A' && $result['selection']['HDD'] === 'HDD_2TB' && $result['selection']['SERVICE'] === []);
-    $assert($result['price']['configurationDeltaMinor'] === 1630000 && $result['price']['finalPriceMinor'] === 4729000);
-    $assert(count($result['price']['groupDeltas']) === 12 && $result['price']['groupDeltas']['HDD'] === 1600000);
+    $assert($result['price']['configurationDeltaMinor'] === 1950000 && $result['price']['finalPriceMinor'] === 5049000);
+    $assert(count($result['price']['groupDeltas']) === 12 && $result['price']['groupDeltas']['HDD'] === 1920000);
     $json = json_encode($result);
     foreach (['defaultPriceMinor','selectedPriceMinor','priceMinor'] as $forbidden) { $assert(!str_contains($json, $forbidden), "Leaked {$forbidden}"); }
 });
 
-$test('catalog BASE provider normalizes safely and rejects missing or non-RUB rows', static function () use ($assert): void {
+$test('catalog price provider uses explicit type and rejects missing or non-RUB rows', static function () use ($assert): void {
     $gateway = new class implements \KK\Korsac\Configurator\CatalogPriceGatewayInterface {
         public ?array $row = ['priceTypeId'=>1,'price'=>'30990.00000000','currency'=>'RUB'];
-        public function findBasePrice(int $productId): ?array { return $this->row; }
+        public array $calls = [];
+        public function findPrice(int $productId, int $priceTypeId): ?array { $this->calls[] = [$productId, $priceTypeId]; return $this->row; }
     };
-    $provider = new \KK\Korsac\Configurator\BitrixCatalogBasePriceProvider($gateway);
-    $price = $provider->get(4);
+    $provider = new \KK\Korsac\Configurator\BitrixCatalogPriceProvider($gateway);
+    $price = $provider->get(4, 1);
     $assert($price->priceTypeId === 1 && $price->currency === 'RUB' && $price->priceMinor === 3099000);
-    foreach ([[null,'catalog_base_price_not_found'], [['priceTypeId'=>1,'price'=>'1.00','currency'=>'USD'],'unsupported_catalog_currency']] as [$row,$code]) {
+    $assert($gateway->calls === [[4, 1]]);
+    foreach ([[null,'catalog_price_not_found'], [['priceTypeId'=>1,'price'=>'1.00','currency'=>'USD'],'unsupported_catalog_currency']] as [$row,$code]) {
         $gateway->row = $row;
-        try { $provider->get(4); } catch (\KK\Korsac\Configurator\ConfiguratorException $error) { $assert($error->diagnostic()['code'] === $code); continue; }
+        try { $provider->get(4, 1); } catch (\KK\Korsac\Configurator\ConfiguratorException $error) { $assert($error->diagnostic()['code'] === $code); continue; }
         throw new \RuntimeException("Provider accepted {$code}");
     }
 });

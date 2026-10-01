@@ -7,15 +7,15 @@ namespace KK\Korsac\Configurator;
 use KK\Korsac\Pricing\ConfigurationPricingException;
 use KK\Korsac\Pricing\PriceNormalizer;
 
-final class BitrixCatalogBasePriceProvider implements CatalogBasePriceProviderInterface
+final class BitrixCatalogPriceProvider implements CatalogPriceProviderInterface
 {
     public function __construct(private readonly CatalogPriceGatewayInterface $gateway = new BitrixCatalogPriceGateway()) {}
 
-    public function get(int $productId): CatalogBasePrice
+    public function get(int $productId, int $priceTypeId): CatalogPrice
     {
-        $row = $this->gateway->findBasePrice($productId);
+        $row = $this->gateway->findPrice($productId, $priceTypeId);
         if ($row === null || !array_key_exists('price', $row)) {
-            throw new ConfiguratorException(['code' => 'catalog_base_price_not_found', 'productId' => $productId]);
+            throw new ConfiguratorException(['code' => 'catalog_price_not_found']);
         }
         $currency = strtoupper(trim((string)($row['currency'] ?? '')));
         if ($currency !== 'RUB') {
@@ -24,11 +24,11 @@ final class BitrixCatalogBasePriceProvider implements CatalogBasePriceProviderIn
         try {
             $minor = PriceNormalizer::toMinor($row['price']);
         } catch (ConfigurationPricingException) {
-            throw new ConfiguratorException(['code' => 'catalog_base_price_not_found', 'productId' => $productId]);
+            throw new ConfiguratorException(['code' => 'catalog_price_not_found']);
         }
         if ($minor < 0) {
-            throw new ConfiguratorException(['code' => 'catalog_base_price_not_found', 'productId' => $productId]);
+            throw new ConfiguratorException(['code' => 'catalog_price_not_found']);
         }
-        return new CatalogBasePrice((int)$row['priceTypeId'], $currency, $minor);
+        return new CatalogPrice($priceTypeId, $currency, $minor);
     }
 }

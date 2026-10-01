@@ -32,6 +32,14 @@ use KK\Korsac\Pricing\DefaultConfigurationCostCalculator;
 use KK\Korsac\Pricing\HlOptionPriceProvider;
 use KK\Korsac\Pricing\OptionPriceProviderInterface;
 use KK\Korsac\Pricing\PriceNormalizer;
+use KK\Korsac\Pricing\OptionPricingModeRegistry;
+use KK\Korsac\Pricing\PricingPolicy;
+use KK\Korsac\Pricing\RetailOptionPriceProvider;
+use KK\Korsac\Pricing\RetailPriceCalculator;
+use KK\Korsac\Pricing\DefaultCatalogPriceCalculator;
+use KK\Korsac\Pricing\ConfiguredCatalogPriceTypeResolver;
+use KK\Korsac\Pricing\PriceChannel;
+use KK\Korsac\Pricing\BitrixPricingPolicyProvider;
 use KK\Korsac\Repository\OptionRepository;
 
 $tests = [];
@@ -423,6 +431,92 @@ $test('HL option price provider validates data and caches successful reads', sta
         try { $provider->getPriceMinor('RAM',$id); } catch (ConfigurationPricingException $e) { $assert($e->diagnostic()['code']===$code); continue; }
         throw new RuntimeException("Provider accepted {$id}");
     }
+});
+
+$test('pricing mode registry maps all twelve canonical groups and rejects unknown groups', static function () use ($assert): void {
+    $expected = [
+        'CPU'=>'PROCUREMENT','GPU'=>'PROCUREMENT','MB'=>'PROCUREMENT','RAM'=>'PROCUREMENT',
+        'SSD'=>'PROCUREMENT','HDD'=>'PROCUREMENT','PSU'=>'PROCUREMENT','COOLER'=>'PROCUREMENT','CASE'=>'PROCUREMENT',
+        'OS'=>'RETAIL','SOFTWARE'=>'RETAIL','SERVICE'=>'RETAIL',
+    ];
+    foreach ($expected as $group => $mode) { $assert(OptionPricingModeRegistry::mode($group) === $mode); }
+    try { OptionPricingModeRegistry::mode('UNKNOWN'); }
+    catch (ConfigurationPricingException $error) { $assert($error->diagnostic()['code'] === 'unknown_pricing_group'); return; }
+    throw new RuntimeException('Unknown pricing group accepted');
+});
+
+$test('retail calculator applies integer half-up hardware markup with overflow guards', static function () use ($assert): void {
+    $calculator = new RetailPriceCalculator();
+    $assert($calculator->calculate(10000, OptionPricingModeRegistry::PROCUREMENT, new PricingPolicy(0, 0)) === 10000);
+    $assert($calculator->calculate(10000, OptionPricingModeRegistry::PROCUREMENT, new PricingPolicy(2000, 0)) === 12000);
+    $assert($calculator->calculate(5, OptionPricingModeRegistry::PROCUREMENT, new PricingPolicy(1000, 0)) === 6);
+    $assert($calculator->calculate(0, OptionPricingModeRegistry::PROCUREMENT, new PricingPolicy(PHP_INT_MAX, 0)) === 0);
+    $assert($calculator->calculate(intdiv(PHP_INT_MAX, 2), OptionPricingModeRegistry::PROCUREMENT, new PricingPolicy(10000, 0)) === PHP_INT_MAX - 1);
+    try { $calculator->calculate(PHP_INT_MAX, OptionPricingModeRegistry::PROCUREMENT, new PricingPolicy(1, 0)); }
+    catch (ConfigurationPricingException $error) { $assert($error->diagnostic()['code'] === 'price_overflow'); return; }
+    throw new RuntimeException('Markup overflow was not detected');
+});
+
+$test('retail option provider marks up hardware and preserves direct-retail groups', static function () use ($assert): void {
+    $raw = new class implements OptionPriceProviderInterface {
+        public function getPriceMinor(string $group, string $xmlId): int { return 10000; }
+    };
+    $provider = new RetailOptionPriceProvider($raw, new PricingPolicy(2000, 0));
+    $assert($provider->getPriceMinor('CPU', 'A') === 12000);
+    foreach (['OS','SOFTWARE','SERVICE'] as $group) { $assert($provider->getPriceMinor($group, 'A') === 10000); }
+});
+
+$test('pricing policy rejects negative values deterministically', static function () use ($assert): void {
+    foreach ([[-1,0],[0,-1]] as [$markup,$fixed]) {
+        try { new PricingPolicy($markup, $fixed); }
+        catch (ConfigurationPricingException $error) { $assert($error->diagnostic() === ['code'=>'invalid_pricing_policy']); continue; }
+        throw new RuntimeException('Invalid policy accepted');
+    }
+});
+
+$test('default catalog price includes retail single defaults and fixed adjustment once', static function () use ($assert): void {
+    $configuration = ProductConfiguration::fromPropertyValues([
+        'KK_CPU_DEFAULT'=>['CPU_A'], 'KK_HDD_OPTIONS'=>['HDD_A'], 'KK_OS_DEFAULT'=>['OS_A'],
+        'KK_SOFTWARE_MULTI_OPTIONS'=>['OFFICE'], 'KK_SERVICE_MULTI_OPTIONS'=>['SETUP'],
+    ], static fn(string $group, string $id): array => ['UF_XML_ID'=>$id,'UF_ACTIVE'=>1]);
+    $raw = new class implements OptionPriceProviderInterface {
+        public function getPriceMinor(string $group, string $xmlId): int { return $group === 'CPU' ? 100000 : 40000; }
+    };
+    $policy = new PricingPolicy(2000, 30000);
+    $result = (new DefaultCatalogPriceCalculator(new RetailOptionPriceProvider($raw, $policy), $policy))->calculate($configuration)->toArray();
+    $assert($result['componentsRetailMinor'] === 160000 && $result['systemFixedAdjustmentMinor'] === 30000 && $result['totalMinor'] === 190000);
+    $assert($result['groups']['HDD']['retailMinor'] === 0);
+    $assert($result['groups']['SOFTWARE']['included'] === false && $result['groups']['SERVICE']['included'] === false);
+});
+
+$test('configured price type resolver supports retail and future business without fallback', static function () use ($assert): void {
+    $values = ['pricing.price_type.2.RETAIL'=>'1', 'pricing.price_type.2.BUSINESS'=>'2'];
+    $resolver = new ConfiguredCatalogPriceTypeResolver(static fn(string $key): ?string => $values[$key] ?? null);
+    $assert($resolver->resolve(2, PriceChannel::RETAIL) === 1);
+    $assert($resolver->resolve(2, PriceChannel::BUSINESS) === 2);
+    try { $resolver->resolve(3, PriceChannel::RETAIL); }
+    catch (\KK\Korsac\Configurator\ConfiguratorException $error) { $assert($error->diagnostic()['code'] === 'catalog_price_type_not_configured'); return; }
+    throw new RuntimeException('Missing price type mapping accepted');
+});
+
+$test('pricing policy provider requires complete iblock and price type configuration', static function () use ($assert): void {
+    $values = [
+        'pricing.policy.2.1.markup_bps'=>'2000',
+        'pricing.policy.2.1.fixed_adjustment_minor'=>'30000',
+    ];
+    $provider = new BitrixPricingPolicyProvider(static fn(string $key): ?string => $values[$key] ?? null);
+    $policy = $provider->get(2, 1);
+    $assert($policy->markupBasisPoints === 2000 && $policy->systemFixedAdjustmentMinor === 30000);
+    try { $provider->get(2, 2); }
+    catch (\KK\Korsac\Configurator\ConfiguratorException $error) { $assert($error->diagnostic()['code'] === 'pricing_policy_not_configured'); return; }
+    throw new RuntimeException('Missing policy accepted');
+});
+
+$test('runtime Catalog query is explicit and does not inspect BASE flag', static function () use ($assert): void {
+    $source = (string)file_get_contents(dirname(__DIR__, 2) . '/lib/Configurator/BitrixCatalogPriceGateway.php');
+    $assert(str_contains($source, "'=CATALOG_GROUP_ID' => \$priceTypeId"));
+    $assert(!str_contains($source, 'BASE'));
+    $assert(!str_contains($source, 'GroupTable'));
 });
 
 require __DIR__ . '/configurator.php';
