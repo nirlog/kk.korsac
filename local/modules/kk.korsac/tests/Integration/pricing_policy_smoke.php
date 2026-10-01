@@ -16,8 +16,8 @@ use KK\Korsac\Repository\OptionRepository;
 $arguments = getopt('', ['iblock:', 'product:', 'channel:']);
 $iblockId = filter_var($arguments['iblock'] ?? null, FILTER_VALIDATE_INT, ['options'=>['min_range'=>1]]);
 $productId = filter_var($arguments['product'] ?? null, FILTER_VALIDATE_INT, ['options'=>['min_range'=>1]]);
-try { $channel = PriceChannel::normalize((string)($arguments['channel'] ?? '')); } catch (Throwable) { $channel = null; }
-if ($iblockId === false || $productId === false || $channel === null) {
+$rawChannel = (string)($arguments['channel'] ?? '');
+if ($iblockId === false || $productId === false || trim($rawChannel) === '') {
     fwrite(STDERR, "Usage: php pricing_policy_smoke.php --iblock=<ID> --product=<ID> --channel=<RETAIL|BUSINESS>\n"); exit(2);
 }
 $documentRoot = ($_SERVER['DOCUMENT_ROOT'] ?? '') ?: dirname(__DIR__, 5);
@@ -26,6 +26,8 @@ require $documentRoot . '/bitrix/modules/main/include/prolog_before.php';
 foreach (['iblock','highloadblock','catalog','kk.korsac'] as $module) {
     if (!Loader::includeModule($module)) { fwrite(STDERR, "Required module {$module} is unavailable.\n"); exit(2); }
 }
+try { $channel = PriceChannel::normalize($rawChannel); }
+catch (Throwable) { fwrite(STDERR, "Usage: php pricing_policy_smoke.php --iblock=<ID> --product=<ID> --channel=<RETAIL|BUSINESS>\n"); exit(2); }
 try {
     $priceTypeId = (new ConfiguredCatalogPriceTypeResolver())->resolve((int)$iblockId, $channel);
     $policy = (new BitrixPricingPolicyProvider())->get((int)$iblockId, $priceTypeId);
