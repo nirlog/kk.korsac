@@ -67,11 +67,12 @@ $test('configurator calculate normalizes selection and exposes only public group
 
 $test('catalog BASE provider normalizes safely and rejects missing or non-RUB rows', static function () use ($assert): void {
     $gateway = new class implements \KK\Korsac\Configurator\CatalogPriceGatewayInterface {
-        public ?array $row = ['priceTypeId'=>1,'price'=>'30990.00','currency'=>'rub'];
+        public ?array $row = ['priceTypeId'=>1,'price'=>'30990.00000000','currency'=>'RUB'];
         public function findBasePrice(int $productId): ?array { return $this->row; }
     };
     $provider = new \KK\Korsac\Configurator\BitrixCatalogBasePriceProvider($gateway);
-    $assert($provider->get(4) == new \KK\Korsac\Configurator\CatalogBasePrice(1, 'RUB', 3099000));
+    $price = $provider->get(4);
+    $assert($price->priceTypeId === 1 && $price->currency === 'RUB' && $price->priceMinor === 3099000);
     foreach ([[null,'catalog_base_price_not_found'], [['priceTypeId'=>1,'price'=>'1.00','currency'=>'USD'],'unsupported_catalog_currency']] as [$row,$code]) {
         $gateway->row = $row;
         try { $provider->get(4); } catch (\KK\Korsac\Configurator\ConfiguratorException $error) { $assert($error->diagnostic()['code'] === $code); continue; }

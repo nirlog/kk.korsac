@@ -329,10 +329,18 @@ $test('default configuration cost detects integer overflow', static function () 
     throw new RuntimeException('Default cost overflow was not detected');
 });
 $test('price normalizer converts decimal boundary values without float arithmetic downstream', static function () use ($assert): void {
-    foreach ([['1234.56',123456], ['1234.5',123450], ['1234',123400], [1234,123400], [1234.56,123456], [0,0], [0.01,1]] as [$value,$expected]) {
+    foreach ([
+        ['30990.00000000',3099000], ['1234.56000000',123456], ['1234.50000000',123450],
+        ['1234.00000000',123400], ['0.01000000',1], ['1234.56',123456], ['1234.5',123450],
+        ['1234',123400], ['+1234.56',123456], ['-1234.56',-123456], [1234,123400],
+        [1234.56,123456], [0,0], [0.01,1], ['92233720368547758.07000000',PHP_INT_MAX],
+    ] as [$value,$expected]) {
         $assert(PriceNormalizer::toMinor($value) === $expected);
     }
-    foreach ([null, true, '', '12.345', 'abc', INF] as $value) {
+    foreach ([
+        null, true, '', '12.345', '1234.56700000', '1234.56010000', '1234.56000001',
+        '0.001', '-1.999', '92233720368547758.08000000', 'abc', INF,
+    ] as $value) {
         try { PriceNormalizer::toMinor($value); } catch (ConfigurationPricingException $error) { $assert($error->diagnostic()['code'] === 'invalid_option_price'); continue; }
         throw new RuntimeException('Invalid price accepted');
     }
