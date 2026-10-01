@@ -24,9 +24,8 @@ foreach ($argv as $argument) {
 $positive = static fn(mixed $value): int|false => filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 $nonNegative = static fn(mixed $value): int|false => filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
 $iblockId = $positive($arguments['iblock'] ?? null);
-try { $channel = PriceChannel::normalize((string)($arguments['channel'] ?? '')); }
-catch (Throwable) { $channel = null; }
-if (!in_array($command, ['configure', 'show'], true) || $iblockId === false || $channel === null) {
+$rawChannel = (string)($arguments['channel'] ?? '');
+if (!in_array($command, ['configure', 'show'], true) || $iblockId === false || trim($rawChannel) === '') {
     fwrite(STDERR, $usage); exit(2);
 }
 
@@ -43,6 +42,8 @@ require $documentRoot . '/bitrix/modules/main/include/prolog_before.php';
 foreach (['catalog', 'kk.korsac'] as $module) {
     if (!Loader::includeModule($module)) { fwrite(STDERR, "Required module {$module} is unavailable.\n"); exit(2); }
 }
+try { $channel = PriceChannel::normalize($rawChannel); }
+catch (Throwable) { fwrite(STDERR, $usage); exit(2); }
 
 try {
     if ($command === 'configure') {

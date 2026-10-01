@@ -163,7 +163,7 @@ $test('product configuration reports duplicate missing and inactive options', st
 $test('module bootstrap and CLI entrypoints are portable', static function () use ($assert): void {
     $namespaces = require __DIR__ . '/fixtures/load_module_include.php';
     $assert(realpath($namespaces['KK\\Korsac'] ?? '') === realpath(dirname(__DIR__, 2) . '/lib'));
-    foreach (['tools/schema.php', 'tools/catalog.php', 'tests/Integration/smoke.php', 'tests/Integration/install_smoke.php', 'tests/Integration/acceptance_smoke.php', 'tests/Integration/schema_v02_migration_smoke.php', 'tests/Integration/catalog_properties_smoke.php', 'tests/Integration/product_configuration_smoke.php', 'tests/Integration/configuration_pricing_smoke.php', 'tests/Integration/default_configuration_cost_smoke.php'] as $file) {
+    foreach (['tools/schema.php', 'tools/catalog.php', 'tools/pricing.php', 'tests/Integration/smoke.php', 'tests/Integration/install_smoke.php', 'tests/Integration/acceptance_smoke.php', 'tests/Integration/schema_v02_migration_smoke.php', 'tests/Integration/catalog_properties_smoke.php', 'tests/Integration/product_configuration_smoke.php', 'tests/Integration/configuration_pricing_smoke.php', 'tests/Integration/default_configuration_cost_smoke.php'] as $file) {
         $source = file_get_contents(dirname(__DIR__, 2) . '/' . $file);
         $assert($source !== false, "Cannot read {$file}");
         $syncPosition = strpos($source, "\$_SERVER['DOCUMENT_ROOT'] = \$documentRoot;");
@@ -172,6 +172,10 @@ $test('module bootstrap and CLI entrypoints are portable', static function () us
         $assert($prologPosition !== false, "{$file} does not load the Bitrix prolog");
         $assert($syncPosition < $prologPosition, "{$file} synchronizes DOCUMENT_ROOT too late");
     }
+    $pricingTool = (string)file_get_contents(dirname(__DIR__, 2) . '/tools/pricing.php');
+    $moduleLoadPosition = strpos($pricingTool, "Loader::includeModule(\$module)");
+    $channelUsePosition = strpos($pricingTool, 'PriceChannel::normalize($rawChannel)');
+    $assert($moduleLoadPosition !== false && $channelUsePosition !== false && $moduleLoadPosition < $channelUsePosition, 'Pricing classes are used before module loading');
 });
 $test('target schema is twelve identical option directories', static function () use ($assert): void {
     $entities = SchemaDefinition::entities();
