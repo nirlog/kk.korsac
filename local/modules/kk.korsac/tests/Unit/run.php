@@ -417,6 +417,8 @@ $test('HL option price provider validates data and caches successful reads', sta
     }
 });
 
+require __DIR__ . '/configurator.php';
+
 $failed = 0;
 foreach ($tests as $name => $callback) { try { $callback(); echo "PASS {$name}\n"; } catch (Throwable $e) { ++$failed; fwrite(STDERR, "FAIL {$name}: {$e->getMessage()}\n"); } }
 echo count($tests) . " tests, {$failed} failures\n";
