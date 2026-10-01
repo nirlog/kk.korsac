@@ -18,7 +18,9 @@ final class ConfiguredCatalogPriceTypeResolver implements CatalogPriceTypeResolv
         $value = $this->reader === null
             ? Option::get(PricingConfiguration::MODULE_ID, $key, '')
             : ($this->reader)($key);
-        if (!is_string($value) || preg_match('/^[1-9]\d*$/D', $value) !== 1 || (int)$value <= 0) {
+        if (!is_string($value) || preg_match('/^[1-9]\d*$/D', $value) !== 1
+            || strlen($value) > strlen((string)PHP_INT_MAX)
+            || (strlen($value) === strlen((string)PHP_INT_MAX) && strcmp($value, (string)PHP_INT_MAX) > 0)) {
             throw new ConfigurationPricingException(['code' => 'catalog_price_type_not_configured']);
         }
         return (int)$value;

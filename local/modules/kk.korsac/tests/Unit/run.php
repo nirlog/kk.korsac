@@ -494,9 +494,12 @@ $test('configured price type resolver supports retail and future business withou
     $resolver = new ConfiguredCatalogPriceTypeResolver(static fn(string $key): ?string => $values[$key] ?? null);
     $assert($resolver->resolve(2, PriceChannel::RETAIL) === 1);
     $assert($resolver->resolve(2, PriceChannel::BUSINESS) === 2);
-    try { $resolver->resolve(3, PriceChannel::RETAIL); }
+    try { $resolver->resolve(3, PriceChannel::RETAIL); throw new RuntimeException('Missing price type mapping accepted'); }
+    catch (ConfigurationPricingException $error) { $assert($error->diagnostic()['code'] === 'catalog_price_type_not_configured'); }
+    $overflow = new ConfiguredCatalogPriceTypeResolver(static fn(string $key): string => (string)PHP_INT_MAX . '0');
+    try { $overflow->resolve(2, PriceChannel::RETAIL); }
     catch (ConfigurationPricingException $error) { $assert($error->diagnostic()['code'] === 'catalog_price_type_not_configured'); return; }
-    throw new RuntimeException('Missing price type mapping accepted');
+    throw new RuntimeException('Overflowing price type mapping accepted');
 });
 
 $test('pricing policy provider requires complete iblock and price type configuration', static function () use ($assert): void {
