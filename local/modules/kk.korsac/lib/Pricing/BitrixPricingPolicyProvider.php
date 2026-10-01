@@ -6,7 +6,6 @@ namespace KK\Korsac\Pricing;
 
 use Bitrix\Main\Config\Option;
 use Closure;
-use KK\Korsac\Configurator\ConfiguratorException;
 
 final class BitrixPricingPolicyProvider implements PricingPolicyProviderInterface
 {
@@ -18,7 +17,7 @@ final class BitrixPricingPolicyProvider implements PricingPolicyProviderInterfac
         $markup = $this->read(PricingConfiguration::markupKey($iblockId, $priceTypeId));
         $fixed = $this->read(PricingConfiguration::fixedAdjustmentKey($iblockId, $priceTypeId));
         if ($markup === null || $fixed === null) {
-            throw new ConfiguratorException(['code' => 'pricing_policy_not_configured']);
+            throw new ConfigurationPricingException(['code' => 'pricing_policy_not_configured']);
         }
         return new PricingPolicy(self::nonNegativeInt($markup), self::nonNegativeInt($fixed));
     }

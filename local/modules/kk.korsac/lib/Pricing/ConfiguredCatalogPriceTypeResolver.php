@@ -6,7 +6,6 @@ namespace KK\Korsac\Pricing;
 
 use Bitrix\Main\Config\Option;
 use Closure;
-use KK\Korsac\Configurator\ConfiguratorException;
 
 final class ConfiguredCatalogPriceTypeResolver implements CatalogPriceTypeResolverInterface
 {
@@ -20,7 +19,7 @@ final class ConfiguredCatalogPriceTypeResolver implements CatalogPriceTypeResolv
             ? Option::get(PricingConfiguration::MODULE_ID, $key, '')
             : ($this->reader)($key);
         if (!is_string($value) || preg_match('/^[1-9]\d*$/D', $value) !== 1 || (int)$value <= 0) {
-            throw new ConfiguratorException(['code' => 'catalog_price_type_not_configured']);
+            throw new ConfigurationPricingException(['code' => 'catalog_price_type_not_configured']);
         }
         return (int)$value;
     }

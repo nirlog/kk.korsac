@@ -93,5 +93,7 @@ $test('catalog price provider uses explicit type and rejects missing or non-RUB 
 $test('controller error projection keeps domain diagnostics and hides throwable details', static function () use ($assert): void {
     $mapper = new \KK\Korsac\Configurator\ConfiguratorErrorMapper();
     $assert($mapper->map(['code'=>'option_not_allowed','group'=>'RAM','xmlId'=>'BAD']) === ['code'=>'option_not_allowed','message'=>'Selected option is not allowed','customData'=>['group'=>'RAM','xmlId'=>'BAD']]);
+    $assert($mapper->map(['code'=>'catalog_price_type_not_configured','exception'=>'ConfigurationPricingException']) === ['code'=>'catalog_price_type_not_configured','message'=>'Catalog price type is not configured','customData'=>[]]);
+    $assert($mapper->map(['code'=>'pricing_policy_not_configured','trace'=>'secret']) === ['code'=>'pricing_policy_not_configured','message'=>'Pricing policy is not configured','customData'=>[]]);
     $assert($mapper->map(['code'=>'secret_sql_error','path'=>'/secret','message'=>'SQL failed']) === ['code'=>'internal_error','message'=>'Internal error','customData'=>[]]);
 });

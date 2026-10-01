@@ -495,7 +495,7 @@ $test('configured price type resolver supports retail and future business withou
     $assert($resolver->resolve(2, PriceChannel::RETAIL) === 1);
     $assert($resolver->resolve(2, PriceChannel::BUSINESS) === 2);
     try { $resolver->resolve(3, PriceChannel::RETAIL); }
-    catch (\KK\Korsac\Configurator\ConfiguratorException $error) { $assert($error->diagnostic()['code'] === 'catalog_price_type_not_configured'); return; }
+    catch (ConfigurationPricingException $error) { $assert($error->diagnostic()['code'] === 'catalog_price_type_not_configured'); return; }
     throw new RuntimeException('Missing price type mapping accepted');
 });
 
@@ -507,9 +507,27 @@ $test('pricing policy provider requires complete iblock and price type configura
     $provider = new BitrixPricingPolicyProvider(static fn(string $key): ?string => $values[$key] ?? null);
     $policy = $provider->get(2, 1);
     $assert($policy->markupBasisPoints === 2000 && $policy->systemFixedAdjustmentMinor === 30000);
-    try { $provider->get(2, 2); }
-    catch (\KK\Korsac\Configurator\ConfiguratorException $error) { $assert($error->diagnostic()['code'] === 'pricing_policy_not_configured'); return; }
-    throw new RuntimeException('Missing policy accepted');
+    try { $provider->get(2, 2); throw new RuntimeException('Missing policy accepted'); }
+    catch (ConfigurationPricingException $error) { $assert($error->diagnostic()['code'] === 'pricing_policy_not_configured'); }
+    $invalidValues = [
+        ['pricing.policy.2.1.markup_bps'=>'invalid', 'pricing.policy.2.1.fixed_adjustment_minor'=>'0'],
+        ['pricing.policy.2.1.markup_bps'=>(string)PHP_INT_MAX . '0', 'pricing.policy.2.1.fixed_adjustment_minor'=>'0'],
+    ];
+    foreach ($invalidValues as $invalid) {
+        $malformed = new BitrixPricingPolicyProvider(static fn(string $key): ?string => $invalid[$key] ?? null);
+        try { $malformed->get(2, 1); }
+        catch (ConfigurationPricingException $error) { $assert($error->diagnostic()['code'] === 'invalid_pricing_policy'); continue; }
+        throw new RuntimeException('Malformed policy accepted');
+    }
+    return;
+});
+
+$test('pricing domain does not depend on Configurator layer', static function () use ($assert): void {
+    $pricingDirectory = dirname(__DIR__, 2) . '/lib/Pricing';
+    foreach (glob($pricingDirectory . '/*.php') ?: [] as $file) {
+        $source = (string)file_get_contents($file);
+        $assert(!str_contains($source, 'KK\\Korsac\\Configurator\\'), basename($file) . ' imports Configurator');
+    }
 });
 
 $test('runtime Catalog query is explicit and does not inspect BASE flag', static function () use ($assert): void {
