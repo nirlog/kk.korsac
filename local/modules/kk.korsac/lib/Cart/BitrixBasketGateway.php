@@ -14,7 +14,7 @@ final class BitrixBasketGateway implements BasketGatewayInterface
         if (!Loader::includeModule('sale')) throw new CartException(['code'=>'sale_module_not_available']);
         $basket=Basket::loadItemsForFUser(Fuser::getId(), $siteId);
         if (!$basket) throw new CartException(['code'=>'basket_unavailable']);
-        $item=$basket->createItem('catalog', $quote->productId);
+        $item=$basket->createItem('kk.korsac', $quote->productId);
         $result=$item->setFields([
             'QUANTITY'=>1, 'CURRENCY'=>$quote->currency, 'LID'=>$siteId, 'PRODUCT_ID'=>$quote->productId,
             'NAME'=>$productName, 'PRICE'=>MinorUnitFormatter::decimal($quote->finalPriceMinor),

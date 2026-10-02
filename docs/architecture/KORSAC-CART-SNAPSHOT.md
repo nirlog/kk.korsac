@@ -18,7 +18,12 @@ The JSON uses `JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_E
 
 ## Basket and Order contract
 
-Each add creates a separate Basket row. Its price is the exact decimal representation of `finalPriceMinor`, with `BASE_PRICE=PRICE`, `DISCOUNT_PRICE=0`, and `CUSTOM_PRICE=Y`. Machine properties are `KORSAC_CONFIGURED`, `KORSAC_SNAPSHOT_KEY`, `KORSAC_SNAPSHOT_HASH`, and `KORSAC_SNAPSHOT_VERSION`. Selected single groups use `KORSAC_<GROUP>`; SOFTWARE and SERVICE use one bounded property per item (`_001`, `_002`, ...). Standard Sale Basket-to-Order copying preserves these properties; checkout does not reprice or reconstruct the configuration.
+Each add creates a separate Basket row owned by `MODULE=kk.korsac`, with
+`PRODUCT_PROVIDER_CLASS=KK\Korsac\Cart\KorsacCatalogProvider`. Its price is the exact decimal representation of
+`finalPriceMinor`, with `BASE_PRICE=PRICE`, `DISCOUNT_PRICE=0`, and `CUSTOM_PRICE=Y`. Machine properties are
+`KORSAC_CONFIGURED`, `KORSAC_SNAPSHOT_KEY`, `KORSAC_SNAPSHOT_HASH`, and `KORSAC_SNAPSHOT_VERSION`. Selected single groups
+use `KORSAC_<GROUP>`; SOFTWARE and SERVICE use one bounded property per item (`_001`, `_002`, ...). Standard Sale
+Basket-to-Order copying preserves these properties; checkout does not reprice or reconstruct the configuration.
 
 Configured rows use `KorsacCatalogProvider`, which delegates normal availability, quantity, dimensions, weight, measure,
 catalog metadata, and stock behavior to Bitrix `CatalogProvider`. It overrides only configured price data after validating
@@ -26,6 +31,11 @@ catalog metadata, and stock behavior to Bitrix `CatalogProvider`. It overrides o
 equal to the snapshot final unit price through Basket refresh and `Order::setBasket()`. A missing, corrupt, wrong-product,
 or wrong-currency snapshot fails explicitly and never falls back to the current Catalog DEFAULT price. Non-KORSAC rows
 retain unmodified parent-provider behavior.
+
+The configured `PRICE_TYPE_ID` comes from the immutable snapshot. `PRODUCT_PRICE_ID` is intentionally cleared because the
+configured final price is not a row in `b_catalog_price`; no synthetic Catalog price row is created. Loading the persisted
+Basket module in a cold request executes `kk.korsac/include.php`, which deliberately loads the required `catalog` module
+before the KORSAC provider class extends Bitrix `CatalogProvider`. It does not globally load `sale`.
 
 If snapshot persistence fails, Basket is untouched. If Basket persistence fails, the newly inserted unattached snapshot is deleted on a best-effort basis. Successfully attached and historical snapshots are never updated or removed by normal uninstall.
 
@@ -52,6 +62,17 @@ key, hash, payload hash, and final unit price against the Cart response; it does
 The smoke requires an otherwise empty test FUSER Basket, creates an unsaved Order, invokes `Order::setBasket()`, and verifies
 that configured `PRICE`, `BASE_PRICE`, zero discount, custom-price flag, order total, and KORSAC properties survive. It never
 saves the Order.
+
+For a separate cold-process gate, take `basketItemId`, `fuserId`, `siteId`, `finalPriceMinor`, and `priceTypeId` from the
+write smoke's `coldSmokeInput`, exit that process, and run:
+
+```bash
+php local/modules/kk.korsac/tests/Integration/cart_provider_cold_smoke.php \
+  --basket-item=<ID> --fuser=<ID> --site=<SITE> --final-price-minor=<MINOR> --price-type=<ID> --cleanup
+```
+
+The cold smoke loads only the Bitrix prolog and `sale` explicitly. Provider resolution must load `kk.korsac` from the
+persisted Basket `MODULE`; it verifies price metadata and properties through an unsaved `Order::setBasket()` call.
 
 ## v1 limitations
 

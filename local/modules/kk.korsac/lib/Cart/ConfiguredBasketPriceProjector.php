@@ -28,6 +28,8 @@ final class ConfiguredBasketPriceProjector
             'DISCOUNT_PRICE' => '0.00',
             'CUSTOM_PRICE' => 'Y',
             'CURRENCY' => $snapshot->currency,
+            'PRICE_TYPE_ID' => $snapshot->priceTypeId,
+            'PRODUCT_PRICE_ID' => null,
         ];
     }
 }

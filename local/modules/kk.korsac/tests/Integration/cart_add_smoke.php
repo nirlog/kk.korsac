@@ -110,6 +110,8 @@ try {
 
     $actualPriceMinor = PriceNormalizer::toMinor($basketItem->getField('PRICE'));
     $beforeOrder = [
+        'module' => (string)$basketItem->getField('MODULE'),
+        'provider' => (string)$basketItem->getField('PRODUCT_PROVIDER_CLASS'),
         'priceMinor' => $actualPriceMinor,
         'basePriceMinor' => PriceNormalizer::toMinor($basketItem->getField('BASE_PRICE')),
         'discountPriceMinor' => PriceNormalizer::toMinor($basketItem->getField('DISCOUNT_PRICE')),
@@ -117,7 +119,11 @@ try {
     ];
     $checks = [
         'productId' => (int)$basketItem->getField('PRODUCT_ID') === (int)$productId,
+        'module' => (string)$basketItem->getField('MODULE') === 'kk.korsac',
+        'provider' => (string)$basketItem->getField('PRODUCT_PROVIDER_CLASS') === \KK\Korsac\Cart\KorsacCatalogProvider::class,
         'price' => $actualPriceMinor === $result['price']['finalPriceMinor'],
+        'basePrice' => $beforeOrder['basePriceMinor'] === $result['price']['finalPriceMinor'],
+        'discountPrice' => $beforeOrder['discountPriceMinor'] === 0,
         'currency' => (string)$basketItem->getField('CURRENCY') === $result['price']['currency'],
         'quantity' => (string)$basketItem->getField('QUANTITY') === '1.0000' || (float)$basketItem->getField('QUANTITY') === 1.0,
         'customPrice' => (string)$basketItem->getField('CUSTOM_PRICE') === 'Y',
@@ -162,6 +168,9 @@ try {
         'basePriceMinor' => PriceNormalizer::toMinor($orderItem->getField('BASE_PRICE')),
         'discountPriceMinor' => PriceNormalizer::toMinor($orderItem->getField('DISCOUNT_PRICE')),
         'customPrice' => (string)$orderItem->getField('CUSTOM_PRICE'),
+        'priceTypeId' => (int)$orderItem->getField('PRICE_TYPE_ID'),
+        'productPriceId' => $orderItem->getField('PRODUCT_PRICE_ID'),
+        'currency' => (string)$orderItem->getField('CURRENCY'),
         'properties' => $orderProperties,
         'orderPriceMinor' => PriceNormalizer::toMinor($order->getPrice()),
     ];
@@ -170,6 +179,9 @@ try {
         'basePrice' => $afterOrder['basePriceMinor'] === $result['price']['finalPriceMinor'],
         'discountPrice' => $afterOrder['discountPriceMinor'] === 0,
         'customPrice' => $afterOrder['customPrice'] === 'Y',
+        'priceTypeId' => $afterOrder['priceTypeId'] === $stored->priceTypeId,
+        'productPriceId' => $afterOrder['productPriceId'] === null,
+        'currency' => $afterOrder['currency'] === $stored->currency,
         'orderPrice' => $afterOrder['orderPriceMinor'] === $result['price']['finalPriceMinor'],
         'properties' => $afterOrder['properties'] === $actualProperties,
     ];
@@ -178,9 +190,18 @@ try {
 
     echo json_encode([
         ...$result,
+        'coldSmokeInput' => [
+            'basketItemId' => (int)$basketItem->getId(),
+            'fuserId' => (int)Fuser::getId(),
+            'siteId' => $siteId,
+            'finalPriceMinor' => $result['price']['finalPriceMinor'],
+            'priceTypeId' => $stored->priceTypeId,
+        ],
         'persistedBasket' => [
             'basketItemId' => (int)$basketItem->getId(),
             'productId' => (int)$basketItem->getField('PRODUCT_ID'),
+            'module' => (string)$basketItem->getField('MODULE'),
+            'provider' => (string)$basketItem->getField('PRODUCT_PROVIDER_CLASS'),
             'price' => (string)$basketItem->getField('PRICE'),
             'priceMinor' => $actualPriceMinor,
             'currency' => (string)$basketItem->getField('CURRENCY'),

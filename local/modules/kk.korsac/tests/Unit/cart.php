@@ -80,7 +80,7 @@ $test('configured basket provider projects snapshot final price and rejects inva
         public function deleteUnattached(ConfigurationSnapshotReference $reference):void{throw new LogicException('read only');}
     };
     $projector=new ConfiguredBasketPriceProjector($repository);
-    $assert($projector->project($snapshot->key,4,'RUB')===['BASE_PRICE'=>'56488.00','PRICE'=>'56488.00','DISCOUNT_PRICE'=>'0.00','CUSTOM_PRICE'=>'Y','CURRENCY'=>'RUB']);
+    $assert($projector->project($snapshot->key,4,'RUB')===['BASE_PRICE'=>'56488.00','PRICE'=>'56488.00','DISCOUNT_PRICE'=>'0.00','CUSTOM_PRICE'=>'Y','CURRENCY'=>'RUB','PRICE_TYPE_ID'=>2,'PRODUCT_PRICE_ID'=>null]);
     $cases=[
         [null,$snapshot->key,4,'RUB','snapshot_not_found'],
         [$snapshot,$snapshot->key,5,'RUB','snapshot_product_mismatch'],
@@ -124,9 +124,17 @@ $test('cart public mapper hides internals and controller keeps POST CSRF default
     $gateway=(string)file_get_contents(dirname(__DIR__,2).'/lib/Cart/BitrixBasketGateway.php');
     $assert(str_contains($gateway,"'CUSTOM_PRICE'=>'Y'")&&str_contains($gateway,'Fuser::getId()'));
     foreach(["'BASE_PRICE'=>MinorUnitFormatter::decimal", "'DISCOUNT_PRICE'=>'0.00'", "'PRODUCT_PROVIDER_CLASS'=>KorsacCatalogProvider::class"] as $needle)$assert(str_contains($gateway,$needle),$needle);
+    $assert(str_contains($gateway,"createItem('kk.korsac',"));
+    $assert(!str_contains($gateway,"createItem('catalog',"));
     $provider=(string)file_get_contents(dirname(__DIR__,2).'/lib/Cart/KorsacCatalogProvider.php');
     $parentCall=strpos($provider,'parent::getProductData($products)');$configuredCheck=strpos($provider,"KORSAC_CONFIGURED");
     $assert($parentCall!==false&&$configuredCheck!==false&&$parentCall<$configuredCheck,'KORSAC provider must delegate to parent before configured-only projection');
     $smoke=(string)file_get_contents(dirname(__DIR__).'/Integration/cart_add_smoke.php');
     foreach(['Basket::loadItemsForFUser','getPropertyCollection()','CUSTOM_PRICE','snapshotFinalPrice','hash(\'sha256\', $stored->payload)'] as $needle)$assert(str_contains($smoke,$needle),$needle);
+    $cold=(string)file_get_contents(dirname(__DIR__).'/Integration/cart_provider_cold_smoke.php');
+    $assert(!str_contains($cold,"Loader::includeModule('kk.korsac')"));
+    foreach(['Order::create','setBasket($basket)',"'productPriceId'",'class_exists(\'KK\\\\Korsac\\\\Cart\\\\KorsacCatalogProvider\',false)'] as $needle)$assert(str_contains($cold,$needle),$needle);
+    $bootstrap=(string)file_get_contents(dirname(__DIR__,2).'/include.php');
+    $assert(str_contains($bootstrap,"Loader::includeModule('catalog')"));
+    $assert(!str_contains($bootstrap,"Loader::includeModule('sale')"));
 });
