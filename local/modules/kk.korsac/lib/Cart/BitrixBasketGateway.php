@@ -7,6 +7,8 @@ use Bitrix\Sale\Fuser;
 use KK\Korsac\Configurator\ConfiguredProductQuote;
 final class BitrixBasketGateway implements BasketGatewayInterface
 {
+    public function __construct(private readonly BasketPropertyWriter $propertyWriter = new BasketPropertyWriter()) {}
+
     public function addConfiguredProduct(ConfiguredProductQuote $quote, string $siteId, string $productName, array $properties): BasketResult
     {
         if (!Loader::includeModule('sale')) throw new CartException(['code'=>'sale_module_not_available']);
@@ -19,8 +21,8 @@ final class BitrixBasketGateway implements BasketGatewayInterface
             'PRODUCT_PROVIDER_CLASS'=>'CCatalogProductProvider',
         ]);
         if (!$result->isSuccess()) throw new CartException(['code'=>'basket_save_failed']);
-        $propertyResult=$item->getPropertyCollection()->setProperty($properties);
-        if (!$propertyResult->isSuccess()) throw new CartException(['code'=>'basket_save_failed']);
+        // Bitrix setProperty() mutates the collection and deliberately returns void.
+        $this->propertyWriter->write($item->getPropertyCollection(), $properties);
         $save=$basket->save();
         if (!$save->isSuccess() || (int)$item->getId() <= 0) throw new CartException(['code'=>'basket_save_failed']);
         return new BasketResult((int)$item->getId());

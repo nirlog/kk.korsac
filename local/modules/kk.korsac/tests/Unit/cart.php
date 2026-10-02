@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use KK\Korsac\Cart\BasketGatewayInterface;
 use KK\Korsac\Cart\BasketPropertyProjector;
+use KK\Korsac\Cart\BasketPropertyWriter;
 use KK\Korsac\Cart\BasketResult;
 use KK\Korsac\Cart\CartErrorMapper;
 use KK\Korsac\Cart\CartException;
@@ -57,6 +58,16 @@ $test('basket properties are deterministic machine references and individual mul
     foreach(['KORSAC_CONFIGURED','KORSAC_SNAPSHOT_KEY','KORSAC_SNAPSHOT_HASH','KORSAC_SNAPSHOT_VERSION','KORSAC_CPU','KORSAC_HDD','KORSAC_SOFTWARE_001','KORSAC_SOFTWARE_002'] as $code)$assert(in_array($code,$codes,true),$code);
     $assert(!in_array('KORSAC_GPU',$codes,true));
     $assert(MinorUnitFormatter::decimal(5648800)==='56488.00');
+});
+
+$test('basket property writer supports Bitrix void setProperty signature',static function()use($assert):void{
+    $collection=new class { public array $properties=[]; public function setProperty(array $properties):void{$this->properties=$properties;} };
+    $properties=[['CODE'=>'KORSAC_CONFIGURED','VALUE'=>'Y']];
+    (new BasketPropertyWriter())->write($collection,$properties);
+    $assert($collection->properties===$properties);
+    $source=(string)file_get_contents(dirname(__DIR__,2).'/lib/Cart/BitrixBasketGateway.php');
+    $assert(!str_contains($source,'$propertyResult'));
+    $assert(!str_contains($source,'setProperty($properties)->isSuccess()'));
 });
 
 $test('cart always obtains a fresh server quote and ignores browser pricing metadata',static function()use($assert,$cartQuote,$views):void{
