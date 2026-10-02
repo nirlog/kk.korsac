@@ -6,6 +6,13 @@ namespace Bitrix\Main {
     final class Loader
     {
         public static array $namespaces = [];
+        public static array $modules = [];
+
+        public static function includeModule(string $module): bool
+        {
+            self::$modules[] = $module;
+            return $module === 'catalog';
+        }
 
         public static function registerNamespace(string $namespace, string $path): void
         {
