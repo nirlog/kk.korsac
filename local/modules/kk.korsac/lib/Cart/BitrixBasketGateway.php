@@ -17,8 +17,9 @@ final class BitrixBasketGateway implements BasketGatewayInterface
         $item=$basket->createItem('catalog', $quote->productId);
         $result=$item->setFields([
             'QUANTITY'=>1, 'CURRENCY'=>$quote->currency, 'LID'=>$siteId, 'PRODUCT_ID'=>$quote->productId,
-            'NAME'=>$productName, 'PRICE'=>MinorUnitFormatter::decimal($quote->finalPriceMinor), 'CUSTOM_PRICE'=>'Y',
-            'PRODUCT_PROVIDER_CLASS'=>'CCatalogProductProvider',
+            'NAME'=>$productName, 'PRICE'=>MinorUnitFormatter::decimal($quote->finalPriceMinor),
+            'BASE_PRICE'=>MinorUnitFormatter::decimal($quote->finalPriceMinor), 'DISCOUNT_PRICE'=>'0.00', 'CUSTOM_PRICE'=>'Y',
+            'PRODUCT_PROVIDER_CLASS'=>KorsacCatalogProvider::class,
         ]);
         if (!$result->isSuccess()) throw new CartException(['code'=>'basket_save_failed']);
         // Bitrix setProperty() mutates the collection and deliberately returns void.

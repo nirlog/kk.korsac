@@ -13,6 +13,8 @@ final class CartErrorMapper
         'invalid_pricing_policy'=>'Pricing policy is invalid','price_option_not_found'=>'Option price was not found',
         'invalid_option_price'=>'Option price is invalid','negative_option_price'=>'Option price is negative',
         'price_overflow'=>'Price overflow','negative_final_price'=>'Final price is negative','internal_error'=>'Internal error',
+        'snapshot_not_found'=>'Configuration snapshot was not found','snapshot_invalid'=>'Configuration snapshot is invalid',
+        'snapshot_product_mismatch'=>'Configuration snapshot product does not match',
     ];
     public function map(array $diagnostic): array
     {

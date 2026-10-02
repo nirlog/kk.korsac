@@ -13,6 +13,7 @@ use KK\Korsac\Cart\ConfigurationSnapshotBuilder;
 use KK\Korsac\Cart\ConfigurationSnapshotReference;
 use KK\Korsac\Cart\ConfigurationSnapshotRepositoryInterface;
 use KK\Korsac\Cart\ConfiguredProductCartService;
+use KK\Korsac\Cart\ConfiguredBasketPriceProjector;
 use KK\Korsac\Cart\MinorUnitFormatter;
 use KK\Korsac\Cart\ProductViewProviderInterface;
 use KK\Korsac\Cart\SiteResolverInterface;
@@ -70,6 +71,25 @@ $test('basket property writer supports Bitrix void setProperty signature',static
     $assert(!str_contains($source,'setProperty($properties)->isSuccess()'));
 });
 
+$test('configured basket provider projects snapshot final price and rejects invalid authority',static function()use($assert,$cartQuote,$views):void{
+    $snapshot=(new ConfigurationSnapshotBuilder($views))->build($cartQuote(5648800),'s1');
+    $repository=new class($snapshot) implements ConfigurationSnapshotRepositoryInterface {
+        public function __construct(public ?ConfigurationSnapshot $snapshot){}
+        public function create(ConfigurationSnapshot $snapshot):ConfigurationSnapshotReference{throw new LogicException('read only');}
+        public function findByKey(string $key):?ConfigurationSnapshot{return $this->snapshot !== null && $this->snapshot->key === $key ? $this->snapshot : null;}
+        public function deleteUnattached(ConfigurationSnapshotReference $reference):void{throw new LogicException('read only');}
+    };
+    $projector=new ConfiguredBasketPriceProjector($repository);
+    $assert($projector->project($snapshot->key,4,'RUB')===['BASE_PRICE'=>'56488.00','PRICE'=>'56488.00','DISCOUNT_PRICE'=>'0.00','CUSTOM_PRICE'=>'Y','CURRENCY'=>'RUB']);
+    $cases=[
+        [null,$snapshot->key,4,'RUB','snapshot_not_found'],
+        [$snapshot,$snapshot->key,5,'RUB','snapshot_product_mismatch'],
+        [$snapshot,$snapshot->key,4,'USD','snapshot_invalid'],
+        [new ConfigurationSnapshot($snapshot->key,str_repeat('0',64),$snapshot->siteId,$snapshot->iblockId,$snapshot->productId,$snapshot->priceTypeId,$snapshot->currency,$snapshot->basePriceMinor,$snapshot->configurationDeltaMinor,$snapshot->finalPriceMinor,$snapshot->payload,$snapshot->display),$snapshot->key,4,'RUB','snapshot_invalid'],
+    ];
+    foreach($cases as [$stored,$key,$product,$currency,$code]){$repository->snapshot=$stored;try{$projector->project($key,$product,$currency);}catch(CartException $error){$assert($error->diagnostic()['code']===$code,$code);continue;}throw new RuntimeException("Projection accepted {$code}");}
+});
+
 $test('cart always obtains a fresh server quote and ignores browser pricing metadata',static function()use($assert,$cartQuote,$views):void{
     $pricing=new class($cartQuote) implements ConfiguredProductPricingServiceInterface { public int $calls=0; public function __construct(private $factory){} public function quote(int $i,int $p,array $s):ConfiguredProductQuote{++$this->calls;return ($this->factory)(5710000);} };
     $repository=new class implements ConfigurationSnapshotRepositoryInterface {public array $items=[];public function create(ConfigurationSnapshot $s):ConfigurationSnapshotReference{$this->items[$s->key]=$s;return new ConfigurationSnapshotReference(count($this->items),$s->key);}public function findByKey(string $k):?ConfigurationSnapshot{return $this->items[$k]??null;}public function deleteUnattached(ConfigurationSnapshotReference $r):void{unset($this->items[$r->key]);}};
@@ -103,6 +123,10 @@ $test('cart public mapper hides internals and controller keeps POST CSRF default
     $assert(!str_contains($source,'Csrf::class')&&!str_contains($source,"'-prefilters' => [Csrf"));
     $gateway=(string)file_get_contents(dirname(__DIR__,2).'/lib/Cart/BitrixBasketGateway.php');
     $assert(str_contains($gateway,"'CUSTOM_PRICE'=>'Y'")&&str_contains($gateway,'Fuser::getId()'));
+    foreach(["'BASE_PRICE'=>MinorUnitFormatter::decimal", "'DISCOUNT_PRICE'=>'0.00'", "'PRODUCT_PROVIDER_CLASS'=>KorsacCatalogProvider::class"] as $needle)$assert(str_contains($gateway,$needle),$needle);
+    $provider=(string)file_get_contents(dirname(__DIR__,2).'/lib/Cart/KorsacCatalogProvider.php');
+    $parentCall=strpos($provider,'parent::getProductData($products)');$configuredCheck=strpos($provider,"KORSAC_CONFIGURED");
+    $assert($parentCall!==false&&$configuredCheck!==false&&$parentCall<$configuredCheck,'KORSAC provider must delegate to parent before configured-only projection');
     $smoke=(string)file_get_contents(dirname(__DIR__).'/Integration/cart_add_smoke.php');
     foreach(['Basket::loadItemsForFUser','getPropertyCollection()','CUSTOM_PRICE','snapshotFinalPrice','hash(\'sha256\', $stored->payload)'] as $needle)$assert(str_contains($smoke,$needle),$needle);
 });

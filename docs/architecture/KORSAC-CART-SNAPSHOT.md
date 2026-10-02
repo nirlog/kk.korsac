@@ -18,7 +18,14 @@ The JSON uses `JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_E
 
 ## Basket and Order contract
 
-Each add creates a separate Basket row. Its price is the exact decimal representation of `finalPriceMinor`, with `CUSTOM_PRICE=Y`. Machine properties are `KORSAC_CONFIGURED`, `KORSAC_SNAPSHOT_KEY`, `KORSAC_SNAPSHOT_HASH`, and `KORSAC_SNAPSHOT_VERSION`. Selected single groups use `KORSAC_<GROUP>`; SOFTWARE and SERVICE use one bounded property per item (`_001`, `_002`, ...). Standard Sale Basket-to-Order copying preserves these properties; checkout does not reprice or reconstruct the configuration.
+Each add creates a separate Basket row. Its price is the exact decimal representation of `finalPriceMinor`, with `BASE_PRICE=PRICE`, `DISCOUNT_PRICE=0`, and `CUSTOM_PRICE=Y`. Machine properties are `KORSAC_CONFIGURED`, `KORSAC_SNAPSHOT_KEY`, `KORSAC_SNAPSHOT_HASH`, and `KORSAC_SNAPSHOT_VERSION`. Selected single groups use `KORSAC_<GROUP>`; SOFTWARE and SERVICE use one bounded property per item (`_001`, `_002`, ...). Standard Sale Basket-to-Order copying preserves these properties; checkout does not reprice or reconstruct the configuration.
+
+Configured rows use `KorsacCatalogProvider`, which delegates normal availability, quantity, dimensions, weight, measure,
+catalog metadata, and stock behavior to Bitrix `CatalogProvider`. It overrides only configured price data after validating
+`KORSAC_CONFIGURED=Y` and `KORSAC_SNAPSHOT_KEY` against the immutable snapshot. This keeps `BASE_PRICE` and `PRICE`
+equal to the snapshot final unit price through Basket refresh and `Order::setBasket()`. A missing, corrupt, wrong-product,
+or wrong-currency snapshot fails explicitly and never falls back to the current Catalog DEFAULT price. Non-KORSAC rows
+retain unmodified parent-provider behavior.
 
 If snapshot persistence fails, Basket is untouched. If Basket persistence fails, the newly inserted unattached snapshot is deleted on a best-effort basis. Successfully attached and historical snapshots are never updated or removed by normal uninstall.
 
@@ -42,6 +49,9 @@ Without `--confirm-write`, the mutating smoke exits before loading Bitrix or wri
 With confirmation it reloads the saved item from the current FUSER/site Basket and verifies the persisted product, price,
 currency, quantity, `CUSTOM_PRICE`, and exact property codes/values. It also reloads the snapshot row and verifies its
 key, hash, payload hash, and final unit price against the Cart response; it does not merely re-project in-memory data.
+The smoke requires an otherwise empty test FUSER Basket, creates an unsaved Order, invokes `Order::setBasket()`, and verifies
+that configured `PRICE`, `BASE_PRICE`, zero discount, custom-price flag, order total, and KORSAC properties survive. It never
+saves the Order.
 
 ## v1 limitations
 
