@@ -20,33 +20,17 @@ final class KorsacCatalogProvider extends CatalogProvider
             return $result;
         }
 
-        $data = $result->getData();
-        $projector = new ConfiguredBasketPriceProjector(new BitrixConfigurationSnapshotRepository());
-        foreach ($products as $basketCode => $product) {
-            $properties = $this->properties((array)$product, $basketCode);
-            if (($properties['KORSAC_CONFIGURED'] ?? null) !== 'Y') {
-                continue;
-            }
-            $snapshotKey = trim((string)($properties['KORSAC_SNAPSHOT_KEY'] ?? ''));
-            if ($snapshotKey === '') {
-                $result->addError(new Error('KORSAC configuration snapshot is invalid', 'snapshot_invalid'));
-                continue;
-            }
-            $priceData = $data['PRODUCT_DATA_LIST'][$basketCode] ?? [];
-            $currency = (string)($product['CURRENCY'] ?? $priceData['CURRENCY'] ?? '');
-            try {
-                $projection = $projector->project($snapshotKey, (int)($product['PRODUCT_ID'] ?? 0), $currency);
-                $data['PRODUCT_DATA_LIST'][$basketCode] = array_replace($priceData, $projection);
-                if (isset($data['PRODUCT_DATA_LIST_FULL'][$basketCode])) {
-                    $data['PRODUCT_DATA_LIST_FULL'][$basketCode] = array_replace($data['PRODUCT_DATA_LIST_FULL'][$basketCode], $projection);
-                }
-            } catch (CartException $error) {
-                $result->addError(new Error('KORSAC configuration snapshot validation failed', $error->diagnostic()['code'] ?? 'snapshot_invalid'));
-            } catch (Throwable) {
-                $result->addError(new Error('KORSAC configuration snapshot validation failed', 'snapshot_invalid'));
-            }
+        $context = $this->getContext();
+        $currency = strtoupper(trim((string)($context['CURRENCY'] ?? '')));
+        try {
+            $data = (new ConfiguredProviderDataProjector(new ConfiguredBasketPriceProjector(new BitrixConfigurationSnapshotRepository())))
+                ->project($result->getData(), $products, $currency, fn(array $product, int|string $basketCode): array => $this->properties($product, $basketCode));
+            $result->setData($data);
+        } catch (CartException $error) {
+            $result->addError(new Error('KORSAC configuration snapshot validation failed', $error->diagnostic()['code'] ?? 'snapshot_invalid'));
+        } catch (Throwable) {
+            $result->addError(new Error('KORSAC configuration snapshot validation failed', 'snapshot_invalid'));
         }
-        $result->setData($data);
         return $result;
     }
 

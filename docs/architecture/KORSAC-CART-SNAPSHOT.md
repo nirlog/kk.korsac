@@ -37,6 +37,11 @@ configured final price is not a row in `b_catalog_price`; no synthetic Catalog p
 Basket module in a cold request executes `kk.korsac/include.php`, which deliberately loads the required `catalog` module
 before the KORSAC provider class extends Bitrix `CatalogProvider`. It does not globally load `sale`.
 
+Provider currency is taken from the normalized `CatalogProvider` context, not from an incidental product or parent price
+row. For the standard Sale response shape, the KORSAC fields replace exactly
+`PRODUCT_DATA_LIST[productId].PRICE_LIST[basketCode]`; aggregate availability and catalog data remain untouched. A direct
+top-level price-row shape is supported as a compatibility path without overwriting a product aggregate.
+
 If snapshot persistence fails, Basket is untouched. If Basket persistence fails, the newly inserted unattached snapshot is deleted on a best-effort basis. Successfully attached and historical snapshots are never updated or removed by normal uninstall.
 
 ## Smokes

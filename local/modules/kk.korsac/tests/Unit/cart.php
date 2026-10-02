@@ -14,6 +14,7 @@ use KK\Korsac\Cart\ConfigurationSnapshotReference;
 use KK\Korsac\Cart\ConfigurationSnapshotRepositoryInterface;
 use KK\Korsac\Cart\ConfiguredProductCartService;
 use KK\Korsac\Cart\ConfiguredBasketPriceProjector;
+use KK\Korsac\Cart\ConfiguredProviderDataProjector;
 use KK\Korsac\Cart\MinorUnitFormatter;
 use KK\Korsac\Cart\ProductViewProviderInterface;
 use KK\Korsac\Cart\SiteResolverInterface;
@@ -90,6 +91,29 @@ $test('configured basket provider projects snapshot final price and rejects inva
     foreach($cases as [$stored,$key,$product,$currency,$code]){$repository->snapshot=$stored;try{$projector->project($key,$product,$currency);}catch(CartException $error){$assert($error->diagnostic()['code']===$code,$code);continue;}throw new RuntimeException("Projection accepted {$code}");}
 });
 
+$test('configured provider projects the nested Sale price row by product and basket code',static function()use($assert,$cartQuote,$views):void{
+    $snapshot=(new ConfigurationSnapshotBuilder($views))->build($cartQuote(5648800),'s1');
+    $repository=new class($snapshot) implements ConfigurationSnapshotRepositoryInterface {
+        public function __construct(private ConfigurationSnapshot $snapshot){}
+        public function create(ConfigurationSnapshot $snapshot):ConfigurationSnapshotReference{throw new LogicException();}
+        public function findByKey(string $key):?ConfigurationSnapshot{return $key===$this->snapshot->key?$this->snapshot:null;}
+        public function deleteUnattached(ConfigurationSnapshotReference $reference):void{throw new LogicException();}
+    };
+    $projector=new ConfiguredProviderDataProjector(new ConfiguredBasketPriceProjector($repository));
+    $parentRow=['PRICE'=>'30990.00','BASE_PRICE'=>'30990.00','PRICE_TYPE_ID'=>1,'PRODUCT_PRICE_ID'=>314,'CAN_BUY'=>'Y'];
+    $data=['PRODUCT_DATA_LIST'=>[4=>['AVAILABLE_QUANTITY'=>7,'PRICE_LIST'=>['basket-42'=>$parentRow]]]];
+    $products=[4=>['PRODUCT_ID'=>4,'QUANTITY_LIST'=>['basket-42'=>1]]];
+    $result=$projector->project($data,$products,'RUB',static fn(array $product,int|string $code):array=>['KORSAC_CONFIGURED'=>'Y','KORSAC_SNAPSHOT_KEY'=>$snapshot->key]);
+    $row=$result['PRODUCT_DATA_LIST'][4]['PRICE_LIST']['basket-42'];
+    $assert($row['PRICE']==='56488.00'&&$row['BASE_PRICE']==='56488.00'&&$row['PRICE_TYPE_ID']===2&&$row['PRODUCT_PRICE_ID']===null);
+    $assert($row['CAN_BUY']==='Y'&&$result['PRODUCT_DATA_LIST'][4]['AVAILABLE_QUANTITY']===7);
+    $direct=['PRODUCT_DATA_LIST'=>['basket-42'=>$parentRow]];
+    $directResult=$projector->project($direct,['basket-42'=>['PRODUCT_ID'=>4,'BASKET_CODE'=>'basket-42']],'RUB',static fn():array=>['KORSAC_CONFIGURED'=>'Y','KORSAC_SNAPSHOT_KEY'=>$snapshot->key]);
+    $assert($directResult['PRODUCT_DATA_LIST']['basket-42']['PRICE']==='56488.00');
+    $unchanged=$projector->project($data,$products,'RUB',static fn():array=>[]);
+    $assert($unchanged===$data,'Non-KORSAC provider data was modified');
+});
+
 $test('cart always obtains a fresh server quote and ignores browser pricing metadata',static function()use($assert,$cartQuote,$views):void{
     $pricing=new class($cartQuote) implements ConfiguredProductPricingServiceInterface { public int $calls=0; public function __construct(private $factory){} public function quote(int $i,int $p,array $s):ConfiguredProductQuote{++$this->calls;return ($this->factory)(5710000);} };
     $repository=new class implements ConfigurationSnapshotRepositoryInterface {public array $items=[];public function create(ConfigurationSnapshot $s):ConfigurationSnapshotReference{$this->items[$s->key]=$s;return new ConfigurationSnapshotReference(count($this->items),$s->key);}public function findByKey(string $k):?ConfigurationSnapshot{return $this->items[$k]??null;}public function deleteUnattached(ConfigurationSnapshotReference $r):void{unset($this->items[$r->key]);}};
@@ -127,8 +151,12 @@ $test('cart public mapper hides internals and controller keeps POST CSRF default
     $assert(str_contains($gateway,"createItem('kk.korsac',"));
     $assert(!str_contains($gateway,"createItem('catalog',"));
     $provider=(string)file_get_contents(dirname(__DIR__,2).'/lib/Cart/KorsacCatalogProvider.php');
-    $parentCall=strpos($provider,'parent::getProductData($products)');$configuredCheck=strpos($provider,"KORSAC_CONFIGURED");
-    $assert($parentCall!==false&&$configuredCheck!==false&&$parentCall<$configuredCheck,'KORSAC provider must delegate to parent before configured-only projection');
+    $parentCall=strpos($provider,'parent::getProductData($products)');$configuredProjection=strpos($provider,'ConfiguredProviderDataProjector');
+    $assert($parentCall!==false&&$configuredProjection!==false&&$parentCall<$configuredProjection,'KORSAC provider must delegate to parent before configured-only projection');
+    $assert(str_contains($provider,'$this->getContext()')&&str_contains($provider,"\$context['CURRENCY']"));
+    $assert(!str_contains($provider,"\$product['CURRENCY']"));
+    $providerProjection=(string)file_get_contents(dirname(__DIR__,2).'/lib/Cart/ConfiguredProviderDataProjector.php');
+    $assert(str_contains($providerProjection,'KORSAC_CONFIGURED')&&str_contains($providerProjection,"['PRICE_LIST'][\$basketCode]"));
     $smoke=(string)file_get_contents(dirname(__DIR__).'/Integration/cart_add_smoke.php');
     foreach(['Basket::loadItemsForFUser','getPropertyCollection()','CUSTOM_PRICE','snapshotFinalPrice','hash(\'sha256\', $stored->payload)'] as $needle)$assert(str_contains($smoke,$needle),$needle);
     $cold=(string)file_get_contents(dirname(__DIR__).'/Integration/cart_provider_cold_smoke.php');
