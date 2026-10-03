@@ -76,6 +76,11 @@ php local/modules/kk.korsac/tools/pricing.php configure \
 php local/modules/kk.korsac/tools/pricing.php show --iblock=2 --channel=RETAIL
 ```
 
+The same canonical settings are available to authorized administrators at
+**Services → KORSAC → Ценообразование**. Both channels may be configured or
+explicitly disabled; CLI and admin changes are immediately interoperable. See
+[`KORSAC-PRICING-ADMIN.md`](../../../docs/architecture/KORSAC-PRICING-ADMIN.md).
+
 Bitrix `BASE=Y` не является KORSAC price-selection rule. Browser не может
 выбирать RETAIL/BUSINESS, price type или policy. До отдельного обновления
 `kk.price-update` Catalog prices могут временно отражать старую формулу;
