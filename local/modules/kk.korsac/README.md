@@ -1,4 +1,4 @@
-# `kk.korsac` v0.3
+# `kk.korsac` v0.4
 
 Серверный Bitrix D7-модуль простых справочников KORSAC options. Требования: PHP 8.2+, Bitrix D7 `highloadblock`, поддерживаемый MySQL/MariaDB и права на создание индексов/удаление пустой legacy schema при migration.
 
@@ -132,6 +132,15 @@ BX.ajax.runAction('kk:korsac.Configurator.calculate', {
 Architecture, exposure rules, errors and smoke instructions:
 [`KORSAC-CONFIGURATOR-API.md`](../../../docs/architecture/KORSAC-CONFIGURATOR-API.md).
 
+
+## Storefront-neutral frontend core
+
+The `kk.korsac.configurator-core` Bitrix extension provides an unstyled,
+template-independent API/state adapter for the three public actions. It retains
+only product identity and selection; displayed prices remain transient server
+projections, and Cart independently calculates the authoritative price and
+immutable snapshot. See
+[`KORSAC-FRONTEND-CONFIGURATOR-CORE.md`](../../../docs/architecture/KORSAC-FRONTEND-CONFIGURATOR-CORE.md).
 
 ## Configured Basket and immutable order snapshot
 

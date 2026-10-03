@@ -52,6 +52,7 @@ class kk_korsac extends CModule
             $store = new OptionMigrationStore();
             (new SchemaMigrationService($store, $gateway))->migrate();
             (new SnapshotMigrationService($store, new BitrixSnapshotTableGateway()))->migrate();
+            $this->InstallFiles();
         } catch (Throwable $exception) {
             if ($registeredHere) {
                 UnRegisterModule($this->MODULE_ID);
@@ -63,6 +64,19 @@ class kk_korsac extends CModule
     public function DoUninstall(): void
     {
         // Deliberately retain HL blocks, rows and migration history.
+        $this->UnInstallFiles();
         UnRegisterModule($this->MODULE_ID);
+    }
+
+    public function InstallFiles(): bool
+    {
+        CopyDirFiles(__DIR__ . '/js', $_SERVER['DOCUMENT_ROOT'] . '/local/js', true, true);
+        return true;
+    }
+
+    public function UnInstallFiles(): bool
+    {
+        DeleteDirFilesEx('/local/js/kk/korsac');
+        return true;
     }
 }
