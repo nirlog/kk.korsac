@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace KK\Korsac\Configurator;
 
 use KK\Korsac\Catalog\ProductConfigurationRepository;
+use KK\Korsac\Catalog\ProductPresentationRepository;
 use KK\Korsac\Pricing\ConfigurationSelection;
 use KK\Korsac\Pricing\ConfigurationPriceCalculator;
 use KK\Korsac\Pricing\CatalogPriceTypeResolverInterface;
@@ -23,6 +24,7 @@ final class ConfiguratorService
         private readonly OptionPriceProviderInterface $rawOptionPrices,
         private readonly CatalogPriceTypeResolverInterface $priceTypes,
         private readonly PricingPolicyProviderInterface $policies,
+        private readonly ProductPresentationRepository $presentations,
     ) {
         $this->pricing = new ConfiguredProductPricingService($configurations, $catalogPrices, $rawOptionPrices, $priceTypes, $policies);
     }
@@ -36,6 +38,7 @@ final class ConfiguratorService
             $this->rawOptionPrices,
             $this->policies->get($iblockId, $quote->priceTypeId),
         ));
+        $presentation = $this->presentations->get($iblockId, $productId);
         $groups = [];
         foreach ($configuration->toArray() as $group => $definition) {
             $choices = $definition['mode'] === 'single'
@@ -50,6 +53,7 @@ final class ConfiguratorService
                     'xmlId' => $view->xmlId,
                     'name' => $view->name,
                     'description' => $view->description,
+                    'image' => $view->image,
                     'deltaMinor' => $candidateResult['groups'][$group]['deltaMinor'],
                 ];
             }
@@ -57,6 +61,7 @@ final class ConfiguratorService
                 'mode' => $definition['mode'],
                 'default' => $definition['mode'] === 'single' ? $definition['default'] : [],
                 ...($definition['mode'] === 'single' ? ['allowNull' => $definition['default'] === null] : []),
+                'presentation' => ['mode'=>$presentation->mode($group)],
                 'choices' => $projectedChoices,
             ];
         }

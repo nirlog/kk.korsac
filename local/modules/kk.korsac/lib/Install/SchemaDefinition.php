@@ -34,6 +34,7 @@ final class SchemaDefinition
             ['UF_PRICE', 'double', true, 0.0, false, null, 2],
             ['UF_PRICE_UPDATED_AT', 'datetime'],
             ['UF_DESCRIPTION', 'string'],
+            ['UF_IMAGE', 'file'],
             ['UF_CREATED_AT', 'datetime', true, 'now'],
             ['UF_UPDATED_AT', 'datetime', true, 'now'],
         ]);

@@ -93,3 +93,7 @@ php local/modules/kk.korsac/tests/Integration/product_configuration_smoke.php --
 
 Скрипты без обязательных ID завершаются с кодом 2 до загрузки Bitrix и ничего не
 изменяют. Product configuration smoke выполняет только чтение.
+
+## Presentation is separate
+
+The `KK_<GROUP>_VIEW` list properties are not configuration references and are deliberately excluded from `CatalogPropertySchema::properties()` and `PropertyCodeParser`. They do not affect DEFAULT/OPTIONS/MULTI_OPTIONS semantics. See [KORSAC-PRESENTATION.md](KORSAC-PRESENTATION.md).

@@ -54,3 +54,7 @@ php local/modules/kk.korsac/tests/Integration/configurator_api_smoke.php \
 ```
 
 The smoke resolves current server configuration and verifies that final price is the configured Catalog price plus the policy-normalized retail delta.
+
+## Presentation metadata (v1)
+
+`Configurator.get` returns an explicit `presentation.mode` for every group and an `image` member for every choice. Image values are either `null` or `{src, width, height}`; raw `UF_IMAGE` and Bitrix file IDs are never public. See [KORSAC-PRESENTATION.md](KORSAC-PRESENTATION.md). `Configurator.calculate` does not repeat this static metadata.
