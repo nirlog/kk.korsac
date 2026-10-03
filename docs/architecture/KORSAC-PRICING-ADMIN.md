@@ -54,3 +54,17 @@ the `catalog`, `iblock`, and `kk.korsac` modules.
 On install, the module copies only its `kk_korsac_pricing.php` entry point into
 `/bitrix/admin`; uninstall removes that file. Uninstall never deletes Option
 pricing settings.
+
+### Updating an existing installation
+
+Updating module source files does not make Bitrix rerun `InstallFiles()`.
+After deploying this version over an already installed module, run the following
+once from the Bitrix document root to install the new `/bitrix/admin` entry point:
+
+```bash
+php -r '$_SERVER["DOCUMENT_ROOT"]=getcwd(); require "bitrix/modules/main/include/prolog_before.php"; $m=CModule::CreateModuleObject("kk.korsac"); if (!$m || !$m->InstallFiles()) { exit(1); }'
+```
+
+The entry point locates the module page in either `/local/modules/kk.korsac` or
+`/bitrix/modules/kk.korsac`, matching both supported module holders. Re-running
+the command is safe and does not alter pricing Option values.

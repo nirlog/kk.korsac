@@ -14,7 +14,15 @@ final class BitrixPricingAdminGateway implements PricingAdminGatewayInterface
 {
     public function catalogExists(int $iblockId): bool
     {
-        return $iblockId > 0 && (bool)CatalogIblockTable::getByPrimary($iblockId, ['select' => ['IBLOCK_ID']])->fetch();
+        if ($iblockId <= 0) {
+            return false;
+        }
+
+        return (bool)CatalogIblockTable::getList([
+            'select' => ['IBLOCK_ID'],
+            'filter' => self::productCatalogFilter($iblockId),
+            'limit' => 1,
+        ])->fetch();
     }
 
     public function priceTypeExists(int $priceTypeId): bool
@@ -41,7 +49,11 @@ final class BitrixPricingAdminGateway implements PricingAdminGatewayInterface
     public function catalogs(): array
     {
         $result = [];
-        $rows = CatalogIblockTable::getList(['select' => ['IBLOCK_ID'], 'order' => ['IBLOCK_ID' => 'ASC']]);
+        $rows = CatalogIblockTable::getList([
+            'select' => ['IBLOCK_ID'],
+            'filter' => self::productCatalogFilter(),
+            'order' => ['IBLOCK_ID' => 'ASC'],
+        ]);
         while ($catalog = $rows->fetch()) {
             $id = (int)$catalog['IBLOCK_ID'];
             $iblock = IblockTable::getByPrimary($id, ['select' => ['NAME']])->fetch();
@@ -50,6 +62,16 @@ final class BitrixPricingAdminGateway implements PricingAdminGatewayInterface
             }
         }
         return $result;
+    }
+
+    private static function productCatalogFilter(?int $iblockId = null): array
+    {
+        $filter = ['=PRODUCT_IBLOCK_ID' => 0];
+        if ($iblockId !== null) {
+            $filter['=IBLOCK_ID'] = $iblockId;
+        }
+
+        return $filter;
     }
 
     public function priceTypes(): array

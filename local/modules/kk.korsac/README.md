@@ -80,6 +80,9 @@ The same canonical settings are available to authorized administrators at
 **Services → KORSAC → Ценообразование**. Both channels may be configured or
 explicitly disabled; CLI and admin changes are immediately interoperable. See
 [`KORSAC-PRICING-ADMIN.md`](../../../docs/architecture/KORSAC-PRICING-ADMIN.md).
+For a module that was already installed before version 0.6.0, follow that
+document's **Updating an existing installation** step to copy the new admin
+entry point into `/bitrix/admin`.
 
 Bitrix `BASE=Y` не является KORSAC price-selection rule. Browser не может
 выбирать RETAIL/BUSINESS, price type или policy. До отдельного обновления

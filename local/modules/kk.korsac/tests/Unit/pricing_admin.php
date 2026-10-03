@@ -11,7 +11,7 @@ $adminGateway = static function (): PricingAdminGatewayInterface {
     return new class implements PricingAdminGatewayInterface {
         public array $options = [];
         public array $writes = [];
-        public function catalogExists(int $iblockId): bool { return $iblockId === 2; }
+        public function catalogExists(int $iblockId): bool { return $iblockId === 2; } // 3 is an SKU/offer iblock.
         public function priceTypeExists(int $priceTypeId): bool { return in_array($priceTypeId, [1, 2], true); }
         public function readOption(string $key): ?string { return $this->options[$key] ?? null; }
         public function writeOption(string $key, string $value): void { $this->writes[] = ['set', $key, $value]; $this->options[$key] = $value; }
@@ -63,6 +63,26 @@ $test('admin service validates every channel before writing', static function ()
         return;
     }
     throw new RuntimeException('Invalid price type accepted');
+});
+
+$test('offer iblock cannot receive pricing configuration', static function () use ($assert, $adminGateway): void {
+    $gateway = $adminGateway();
+    try {
+        (new PricingConfigurationAdminService($gateway))->save(3, [
+            'RETAIL'=>['enabled'=>'Y','priceTypeId'=>'2','markupPercent'=>'20','fixedRub'=>'0'],
+        ]);
+    } catch (InvalidArgumentException $error) {
+        $assert($error->getMessage() === 'catalog_not_found');
+        $assert($gateway->writes === []);
+        return;
+    }
+    throw new RuntimeException('Offer iblock accepted as a product catalog');
+});
+
+$test('Bitrix admin gateway filters product catalogs consistently', static function () use ($assert): void {
+    $source = (string)file_get_contents(dirname(__DIR__, 2) . '/lib/Admin/BitrixPricingAdminGateway.php');
+    $assert(str_contains($source, "['=PRODUCT_IBLOCK_ID' => 0]"));
+    $assert(substr_count($source, 'self::productCatalogFilter(') === 2);
 });
 
 $test('unconfiguring shared channel retains shared policy', static function () use ($assert, $adminGateway): void {
