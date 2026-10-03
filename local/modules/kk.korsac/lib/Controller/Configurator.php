@@ -12,6 +12,7 @@ use Bitrix\Main\Loader;
 use KK\Korsac\Catalog\BitrixCatalogPropertyGateway;
 use KK\Korsac\Catalog\ProductConfigurationException;
 use KK\Korsac\Catalog\ProductConfigurationRepository;
+use KK\Korsac\Catalog\ProductPresentationRepository;
 use KK\Korsac\Configurator\BitrixCatalogPriceProvider;
 use KK\Korsac\Configurator\ConfiguratorException;
 use KK\Korsac\Configurator\ConfiguratorErrorMapper;
@@ -69,6 +70,7 @@ final class Configurator extends Controller
             new HlOptionPriceProvider($options),
             new ConfiguredCatalogPriceTypeResolver(),
             new BitrixPricingPolicyProvider(),
+            new ProductPresentationRepository(new BitrixCatalogPropertyGateway()),
         );
     }
 

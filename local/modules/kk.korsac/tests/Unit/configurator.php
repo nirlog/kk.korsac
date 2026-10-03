@@ -12,6 +12,8 @@ $configuratorFixture = static function (): array {
         public function iblockExists(int $iblockId): bool { return $iblockId === 2; }
         public function productExists(int $iblockId, int $productId): bool { return $iblockId === 2 && $productId === 4; }
         public function values(int $iblockId, int $productId, string $code): array { return $this->propertyValues[$code] ?? []; }
+        public function enumValues(int $iblockId, int $productId, string $code): array { return $this->propertyValues[$code] ?? []; }
+        public function enums(int $propertyId): array { foreach ($this->properties ?? [] as $property) { if (($property['ID'] ?? null) === $propertyId) return array_map(static fn(array $v): array => ['XML_ID'=>$v['XML_ID'],'VALUE'=>$v['VALUE'],'DEF'=>$v['DEF']], $property['VALUES'] ?? []); } return []; }
         public function find(int $iblockId, string $code): ?array { return null; }
         public function create(int $iblockId, array $property): int { throw new \LogicException('read only'); }
     };
@@ -44,6 +46,7 @@ $configuratorFixture = static function (): array {
         new \KK\Korsac\Pricing\HlOptionPriceProvider($repository),
         $resolver,
         $policies,
+        new \KK\Korsac\Catalog\ProductPresentationRepository($gateway),
     ), $gateway];
 };
 
@@ -53,7 +56,7 @@ $test('configurator GET projects all groups metadata ordering and calculator del
     $assert(count($result['groups']) === 12);
     $assert(array_column($result['groups']['RAM']['choices'], 'xmlId') === ['RAM_32','RAM_64','RAM_16']);
     $assert($result['groups']['HDD']['allowNull'] === true && $result['groups']['SOFTWARE']['default'] === []);
-    $assert($result['groups']['CPU']['choices'][0] === ['xmlId'=>'CPU_A','name'=>'Public CPU','description'=>'Fast','deltaMinor'=>0]);
+    $assert($result['groups']['CPU']['choices'][0] === ['xmlId'=>'CPU_A','name'=>'Public CPU','description'=>'Fast','image'=>null,'deltaMinor'=>0]);
     $assert($result['groups']['CPU']['choices'][1]['name'] === 'Fallback CPU' && $result['groups']['CPU']['choices'][1]['description'] === null);
     $assert($result['groups']['RAM']['choices'][1]['deltaMinor'] === 12000);
     $assert($result['groups']['RAM']['choices'][2]['deltaMinor'] === -12000);

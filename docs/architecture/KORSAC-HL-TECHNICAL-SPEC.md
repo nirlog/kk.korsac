@@ -45,6 +45,7 @@ KORSAC OPTION HL
 | `UF_PRICE` | double, precision 2 | Y | `0.00` | абсолютная цена |
 | `UF_PRICE_UPDATED_AT` | datetime | N | NULL | время обновления цены |
 | `UF_DESCRIPTION` | string/text | N | NULL | описание |
+| `UF_IMAGE` | file | N | NULL | опциональное изображение для публичного представления |
 | `UF_CREATED_AT` | datetime | Y | now | создание |
 | `UF_UPDATED_AT` | datetime | Y | now | изменение |
 
@@ -80,3 +81,7 @@ Migration `2026_09_30_003_price_precision` выполняется после 002
 ## 8. Вне scope
 
 Frontend, создание catalog properties, configurator, pricing formulas, basket/order, imports, stock, compatibility engine и admin CRUD не реализуются.
+
+## 9. Presentation extension (v0.5)
+
+All 12 option directories additionally define optional, non-multiple `file` field `UF_IMAGE`. Existing installations receive it through idempotent migration `2026_10_03_005_option_image`; it has no database index and does not affect pricing data. Product presentation properties and public projection are specified in [KORSAC-PRESENTATION.md](KORSAC-PRESENTATION.md).

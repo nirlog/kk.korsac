@@ -10,7 +10,10 @@ final class HlOptionViewProvider implements OptionViewProviderInterface
 {
     private array $cache = [];
 
-    public function __construct(private readonly OptionRepository $repository = new OptionRepository()) {}
+    public function __construct(
+        private readonly OptionRepository $repository = new OptionRepository(),
+        private readonly OptionImageResolverInterface $images = new BitrixOptionImageResolver(),
+    ) {}
 
     public function get(string $group, string $xmlId): OptionView
     {
@@ -25,6 +28,6 @@ final class HlOptionViewProvider implements OptionViewProviderInterface
         $publicName = trim((string)($row['UF_PUBLIC_NAME'] ?? ''));
         $name = $publicName !== '' ? $publicName : trim((string)($row['UF_NAME'] ?? ''));
         $description = trim((string)($row['UF_DESCRIPTION'] ?? ''));
-        return $this->cache[$key] = new OptionView($xmlId, $name, $description === '' ? null : $description);
+        return $this->cache[$key] = new OptionView($xmlId, $name, $description === '' ? null : $description, $this->images->resolve($row['UF_IMAGE'] ?? null));
     }
 }

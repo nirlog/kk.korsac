@@ -10,5 +10,7 @@ final readonly class OptionView
         public string $xmlId,
         public string $name,
         public ?string $description,
+        /** @var array{src:string,width:int,height:int}|null */
+        public ?array $image = null,
     ) {}
 }
