@@ -52,6 +52,27 @@ final class BitrixCatalogPropertyGateway implements CatalogPropertyGatewayInterf
         return $result;
     }
 
+    public function enumValues(int $iblockId, int $productId, string $code): array
+    {
+        $result = [];
+        $rows = \CIBlockElement::GetProperty($iblockId, $productId, self::PROPERTY_VALUE_ORDER, ['CODE' => $code]);
+        while ($row = $rows->Fetch()) {
+            $value = trim((string)($row['VALUE_XML_ID'] ?? ''));
+            if ($value !== '') { $result[] = $value; }
+        }
+        return $result;
+    }
+
+    public function enums(int $propertyId): array
+    {
+        $result = [];
+        $rows = \CIBlockPropertyEnum::GetList(['SORT'=>'ASC', 'ID'=>'ASC'], ['PROPERTY_ID'=>$propertyId]);
+        while ($row = $rows->Fetch()) {
+            $result[] = ['XML_ID'=>(string)$row['XML_ID'], 'VALUE'=>(string)$row['VALUE'], 'DEF'=>(string)$row['DEF']];
+        }
+        return $result;
+    }
+
     public function productExists(int $iblockId, int $productId): bool
     {
         return (bool)\CIBlockElement::GetList([], ['ID' => $productId, 'IBLOCK_ID' => $iblockId], false, ['nTopCount' => 1], ['ID'])->Fetch();

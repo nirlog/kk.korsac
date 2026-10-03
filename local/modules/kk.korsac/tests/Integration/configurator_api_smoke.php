@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Bitrix\Main\Loader;
 use KK\Korsac\Catalog\BitrixCatalogPropertyGateway;
 use KK\Korsac\Catalog\ProductConfigurationRepository;
+use KK\Korsac\Catalog\ProductPresentationRepository;
 use KK\Korsac\Configurator\BitrixCatalogPriceProvider;
 use KK\Korsac\Configurator\ConfiguratorService;
 use KK\Korsac\Configurator\HlOptionViewProvider;
@@ -44,6 +45,7 @@ try {
         new HlOptionPriceProvider($options),
         new ConfiguredCatalogPriceTypeResolver(),
         new BitrixPricingPolicyProvider(),
+        new ProductPresentationRepository(new BitrixCatalogPropertyGateway()),
     );
     $result = $selection === [] ? $service->get((int)$iblockId, (int)$productId) : $service->calculate((int)$iblockId, (int)$productId, $selection);
     if ($selection === [] && count($result['groups']) !== 12) { throw new RuntimeException('Expected all 12 canonical groups'); }

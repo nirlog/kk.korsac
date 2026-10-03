@@ -80,8 +80,10 @@ $fakeCatalogGateway = static function (): CatalogPropertyGatewayInterface {
         public int $writes = 0;
         public function iblockExists(int $iblockId): bool { return $iblockId === 123; }
         public function find(int $iblockId, string $code): ?array { return $this->properties[$code] ?? null; }
-        public function create(int $iblockId, array $property): int { ++$this->writes; $this->properties[$property['CODE']] = $property; return $this->writes; }
+        public function create(int $iblockId, array $property): int { ++$this->writes; $this->properties[$property['CODE']] = ['ID'=>$this->writes] + $property; return $this->writes; }
         public function values(int $iblockId, int $productId, string $code): array { return $this->propertyValues[$code] ?? []; }
+        public function enumValues(int $iblockId, int $productId, string $code): array { return $this->propertyValues[$code] ?? []; }
+        public function enums(int $propertyId): array { foreach ($this->properties ?? [] as $property) { if (($property['ID'] ?? null) === $propertyId) return array_map(static fn(array $v): array => ['XML_ID'=>$v['XML_ID'],'VALUE'=>$v['VALUE'],'DEF'=>$v['DEF']], $property['VALUES'] ?? []); } return []; }
         public function productExists(int $iblockId, int $productId): bool { return $iblockId === 123 && $productId === 456; }
     };
 };
@@ -108,6 +110,23 @@ $test('catalog schema generates twenty-two directory properties', static functio
     $assert($properties['KK_SERVICE_MULTI_OPTIONS']['MULTIPLE'] === 'Y');
     foreach ($properties as $property) { $assert($property['PROPERTY_TYPE'] === 'S'); $assert($property['USER_TYPE'] === 'directory'); $assert($property['IS_REQUIRED'] === 'N'); }
 });
+$test('presentation schema keeps business modes separate and stable', static function () use ($assert): void {
+    $properties = \KK\Korsac\Catalog\ProductPresentationSchema::properties();
+    $assert(count($properties) === 12);
+    $case = $properties['KK_CASE_VIEW']; $software = $properties['KK_SOFTWARE_VIEW'];
+    $assert($case['PROPERTY_TYPE'] === 'L' && $case['MULTIPLE'] === 'N' && $case['IS_REQUIRED'] === 'N');
+    $assert(array_column($case['VALUES'], 'XML_ID') === ['select','text_buttons','image_buttons']);
+    $assert(array_column($software['VALUES'], 'XML_ID') === ['select','text_buttons','image_buttons','checkboxes']);
+    $assert(array_values(array_filter($case['VALUES'], static fn(array $v): bool => $v['DEF'] === 'Y'))[0]['XML_ID'] === 'select');
+});
+$test('presentation repository resolves stable enums with safe fallback and warning', static function () use ($assert, $fakeCatalogGateway): void {
+    $gateway = $fakeCatalogGateway();
+    $gateway->propertyValues = ['KK_CASE_VIEW'=>['image_buttons'], 'KK_SOFTWARE_VIEW'=>['checkboxes'], 'KK_CPU_VIEW'=>['checkboxes']];
+    $result = (new \KK\Korsac\Catalog\ProductPresentationRepository($gateway))->get(123, 456);
+    $assert($result->mode('CASE') === 'image_buttons' && $result->mode('SOFTWARE') === 'checkboxes');
+    $assert($result->mode('CPU') === 'select' && $result->mode('RAM') === 'select');
+    $assert($result->warnings === [['code'=>'presentation_mode_invalid','group'=>'CPU','mode'=>'checkboxes']]);
+});
 $test('Bitrix property reads use stable multiple value ordering', static function () use ($assert): void {
     $assert(BitrixCatalogPropertyGateway::PROPERTY_VALUE_ORDER === ['sort'=>'asc', 'id'=>'asc', 'value_id'=>'asc']);
     $source = file_get_contents(dirname(__DIR__, 2) . '/lib/Catalog/BitrixCatalogPropertyGateway.php');
@@ -115,9 +134,9 @@ $test('Bitrix property reads use stable multiple value ordering', static functio
 });
 $test('catalog property installer is idempotent and rejects conflicts', static function () use ($assert, $fakeCatalogGateway): void {
     $gateway = $fakeCatalogGateway(); $installer = new CatalogPropertyInstaller($gateway);
-    $assert($installer->installWithResult(123) === ['created'=>22, 'existing'=>0]);
+    $result = $installer->installWithResult(123); $assert($result['created'] === 34 && $result['configuration'] === ['created'=>22,'existing'=>0] && $result['presentation'] === ['created'=>12,'existing'=>0]);
     $writes = $gateway->writes;
-    $assert($installer->installWithResult(123) === ['created'=>0, 'existing'=>22]);
+    $result = $installer->installWithResult(123); $assert($result['created'] === 0 && $result['existing'] === 34);
     $assert($gateway->writes === $writes);
     foreach ([
         ['MULTIPLE', 'N'], ['USER_TYPE', 'String'], ['IS_REQUIRED', 'Y'], ['USER_TYPE_SETTINGS', ['TABLE_NAME'=>'b_wrong']],
@@ -185,12 +204,27 @@ $test('target schema is twelve identical option directories', static function ()
     $entities = SchemaDefinition::entities();
     $assert(count($entities) === 12);
     $assert(array_keys(SchemaDefinition::OPTION_TYPES) === ['CPU','GPU','MB','RAM','SSD','HDD','PSU','COOLER','CASE','OS','SOFTWARE','SERVICE']);
-    $expectedFields = ['UF_XML_ID','UF_NAME','UF_PUBLIC_NAME','UF_ACTIVE','UF_SORT','UF_PRICE','UF_PRICE_UPDATED_AT','UF_DESCRIPTION','UF_CREATED_AT','UF_UPDATED_AT'];
+    $expectedFields = ['UF_XML_ID','UF_NAME','UF_PUBLIC_NAME','UF_ACTIVE','UF_SORT','UF_PRICE','UF_PRICE_UPDATED_AT','UF_DESCRIPTION','UF_IMAGE','UF_CREATED_AT','UF_UPDATED_AT'];
     foreach ($entities as $entity) { $assert(array_keys($entity['fields']) === $expectedFields); $assert(count($entity['indexes']) === 2); }
     foreach (['KorsacHdd','KorsacOs','KorsacSoftware','KorsacService'] as $name) $assert(isset($entities[$name]));
     foreach (['KorsacPhysicalSku','KorsacSupplierOffer','KorsacValidatedBuild'] as $name) $assert(!isset($entities[$name]));
     $assert($entities['KorsacMotherboard']['table'] === 'b_hlbd_korsac_mb');
     $assert($entities['KorsacCpu']['fields']['UF_PRICE']['precision'] === 2);
+    foreach ($entities as $entity) {
+        $image = $entity['fields']['UF_IMAGE'];
+        $assert($image['type'] === 'file' && !$image['multiple'] && !$image['required'] && $image['default'] === null);
+    }
+});
+$test('option image view exposes public metadata only', static function () use ($assert): void {
+    $repository = new class extends OptionRepository {
+        public function findByTypeAndXmlId(string $type, string $xmlId): ?array { return ['UF_PUBLIC_NAME'=>'Case', 'UF_DESCRIPTION'=>'', 'UF_IMAGE'=>42]; }
+    };
+    $resolver = new class implements \KK\Korsac\Configurator\OptionImageResolverInterface {
+        public function resolve(mixed $fileId): ?array { return $fileId === 42 ? ['src'=>'/upload/test.jpg','width'=>800,'height'=>800] : null; }
+    };
+    $view = (new \KK\Korsac\Configurator\HlOptionViewProvider($repository, $resolver))->get('CASE', 'CASE_A');
+    $assert($view->image === ['src'=>'/upload/test.jpg','width'=>800,'height'=>800]);
+    $assert(!str_contains(json_encode($view), '42') && !property_exists($view, 'UF_IMAGE'));
 });
 $test('double field comparator requires expected precision', static function () use ($assert): void {
     $field = SchemaDefinition::entities()['KorsacCpu']['fields']['UF_PRICE'];
@@ -225,7 +259,7 @@ $test('migration performs complete preflight before any deletion', static functi
 $test('fresh install baselines historical 001 and creates only v0.2', static function () use ($assert, $fakeGateway, $fakeStore): void {
     $gateway = $fakeGateway(); $store = $fakeStore();
     $applied = (new SchemaMigrationService($store, $gateway))->migrate();
-    $assert($applied === [SchemaMigrationService::V01_MIGRATION_ID, '2026_09_30_002_simplify_hl_schema', '2026_09_30_003_price_precision']);
+    $assert($applied === [SchemaMigrationService::V01_MIGRATION_ID, '2026_09_30_002_simplify_hl_schema', '2026_09_30_003_price_precision', '2026_10_03_005_option_image']);
     $assert(count(array_intersect(array_keys($gateway->blocks), array_keys(SchemaDefinition::entities()))) === 12);
     foreach (SimplifyHlSchema::LEGACY_BLOCKS as $name) $assert(!isset($gateway->blocks[$name]));
 });
@@ -233,7 +267,7 @@ $test('existing v0.1 with applied 001 transitions through 002', static function 
     $gateway = $fakeGateway();
     foreach (SimplifyHlSchema::LEGACY_BLOCKS as $name) $gateway->blocks[$name] = ['ID'=>count($gateway->blocks)+1,'NAME'=>$name,'TABLE_NAME'=>'legacy_' . count($gateway->blocks)];
     $store = $fakeStore([SchemaMigrationService::V01_MIGRATION_ID]);
-    $assert((new SchemaMigrationService($store, $gateway))->migrate() === ['2026_09_30_002_simplify_hl_schema', '2026_09_30_003_price_precision']);
+    $assert((new SchemaMigrationService($store, $gateway))->migrate() === ['2026_09_30_002_simplify_hl_schema', '2026_09_30_003_price_precision', '2026_10_03_005_option_image']);
     foreach (SimplifyHlSchema::LEGACY_BLOCKS as $name) $assert(!isset($gateway->blocks[$name]));
     foreach (array_keys(SchemaDefinition::entities()) as $name) $assert(isset($gateway->blocks[$name]));
 });
