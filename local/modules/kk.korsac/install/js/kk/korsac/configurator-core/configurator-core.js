@@ -187,7 +187,7 @@
             }
             return result;
         }, function (error) {
-            if (sequence === self.calculateSequence) {
+            if (sequence === self.calculateSequence && revision === self.selectionRevision) {
                 self.emit('error', error);
             }
             throw error;

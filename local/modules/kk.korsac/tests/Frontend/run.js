@@ -75,6 +75,19 @@ test('a response cannot undo a selection edited while calculation was in flight'
     assert.equal(events.filter(event => event.type === 'calculated').length, 0);
 });
 
+test('a stale calculation error is not emitted after selection changes', async () => {
+    let reject;
+    const core = new ConfiguratorCore({transport: {request() { return new Promise((resolve, fail) => { reject = fail; }); }}, iblockId: 2, productId: 123, selection: {RAM: 'RAM_32'}});
+    const events = [];
+    core.subscribe(event => events.push(event));
+    const request = core.calculate();
+    core.setGroup('RAM', 'RAM_64');
+    reject(new Error('stale request failed'));
+    await assert.rejects(request, /stale request failed/);
+    assert.deepEqual(core.getState().selection, {RAM: 'RAM_64'});
+    assert.equal(events.filter(event => event.type === 'error').length, 0);
+});
+
 test('selection shape is checked locally while server remains whitelist authority', () => {
     const transport = {request() { return Promise.resolve({}); }};
     const core = new ConfiguratorCore({transport, iblockId: 2, productId: 123});

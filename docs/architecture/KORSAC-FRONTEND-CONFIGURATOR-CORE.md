@@ -54,10 +54,11 @@ An event includes a defensive copy of current state. Unsubscribe with the
 function returned by `subscribe()`.
 
 Slow calculation responses cannot overwrite a newer selection or emit stale
-display data. Their promises still settle for the original callers, while only
-the newest calculation may normalize state and emit `calculated`. The backend
-whitelist remains authoritative even though the adapter rejects obviously
-malformed group/value shapes before transport.
+display data or errors. Their promises still settle for the original callers,
+while only a calculation for the current selection may normalize state and
+emit `calculated` or `error`. The backend whitelist remains authoritative even
+though the adapter rejects obviously malformed group/value shapes before
+transport.
 
 ## Test
 
