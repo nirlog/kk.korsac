@@ -8,14 +8,20 @@ const test = (name, callback) => tests.push([name, callback]);
 test('Bitrix transport uses the native envelope and correct parameter channel', async () => {
     const calls = [];
     const transport = new BitrixTransport({ajax: {runAction(action, options) {
+        if (action === ACTIONS.get && options.method !== 'GET') {
+            return Promise.reject({errors: [{code: 'invalid_http_method', message: 'Wrong method for current action'}]});
+        }
+        if (action === ACTIONS.calculate && options.method !== 'POST') {
+            return Promise.reject({errors: [{code: 'invalid_http_method', message: 'Wrong method for current action'}]});
+        }
         calls.push([action, options]);
         return Promise.resolve({status: 'success', data: {ok: true}});
     }}});
     assert.deepEqual(await transport.request(ACTIONS.get, {productId: 4}, 'GET'), {ok: true});
     assert.deepEqual(await transport.request(ACTIONS.calculate, {selection: {}}, 'POST'), {ok: true});
     assert.deepEqual(calls, [
-        [ACTIONS.get, {getParameters: {productId: 4}}],
-        [ACTIONS.calculate, {data: {selection: {}}}]
+        [ACTIONS.get, {method: 'GET', getParameters: {productId: 4}}],
+        [ACTIONS.calculate, {method: 'POST', data: {selection: {}}}]
     ]);
 });
 
@@ -105,4 +111,7 @@ test('selection shape is checked locally while server remains whitelist authorit
     }
     process.stdout.write(`${tests.length} tests, ${failed} failures\n`);
     process.exitCode = failed === 0 ? 0 : 1;
+    if (failed === 0) {
+        require('./renderer.run.js');
+    }
 })();
