@@ -1,4 +1,4 @@
-# `kk.korsac` v0.7
+# `kk.korsac` v0.8
 
 Серверный Bitrix D7-модуль простых справочников KORSAC options. Требования: PHP 8.2+, Bitrix D7 `highloadblock`, поддерживаемый MySQL/MariaDB и права на создание индексов/удаление пустой legacy schema при migration.
 
@@ -127,10 +127,12 @@ absolute component prices.
 
 ```javascript
 BX.ajax.runAction('kk:korsac.Configurator.get', {
+    method: 'GET',
     getParameters: {iblockId: 2, productId: 4}
 });
 
 BX.ajax.runAction('kk:korsac.Configurator.calculate', {
+    method: 'POST',
     data: {
         iblockId: 2,
         productId: 4,
@@ -167,3 +169,13 @@ is not required. API, browser harness and acceptance steps are documented in
 `kk:korsac.Cart.add` accepts only `iblockId`, `productId`, and a partial `selection`. It shares `ConfiguredProductPricingService` with Configurator, creates a schema-v1 immutable snapshot in `b_kk_korsac_config_snapshot`, and adds a separate guest-FUSER Basket line at the authoritative custom unit price. Compact snapshot references and human-readable configuration properties flow to Order through standard Sale behavior. The `sale` module is required only when Cart is invoked.
 
 Apply the new table migration to an installed environment with `php local/modules/kk.korsac/tools/schema.php migrate`. See [`KORSAC-CART-SNAPSHOT.md`](../../../docs/architecture/KORSAC-CART-SNAPSHOT.md) for the persistence/property contract, compensation behavior, dry smoke, controlled write smoke, and limitations. Normal uninstall retains snapshots.
+
+
+## Product-card configurator component
+
+`kk:korsac.configurator` mounts the existing renderer from a normal Bitrix product
+page. Canonical source is installed from `install/components` to
+`/local/components`; existing installations should rerun `InstallFiles()` and do
+not need a schema migration. Parameters, integration example and fixture #367
+acceptance are documented in
+[`KORSAC-PRODUCT-CONFIGURATOR-COMPONENT.md`](../../../docs/architecture/KORSAC-PRODUCT-CONFIGURATOR-COMPONENT.md).

@@ -585,6 +585,7 @@ $test('runtime Catalog query is explicit and does not inspect BASE flag', static
 require __DIR__ . '/configurator.php';
 require __DIR__ . '/cart.php';
 require __DIR__ . '/pricing_admin.php';
+require __DIR__ . '/component.php';
 
 $failed = 0;
 foreach ($tests as $name => $callback) { try { $callback(); echo "PASS {$name}\n"; } catch (Throwable $e) { ++$failed; fwrite(STDERR, "FAIL {$name}: {$e->getMessage()}\n"); } }

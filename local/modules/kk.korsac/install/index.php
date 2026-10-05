@@ -72,12 +72,14 @@ class kk_korsac extends CModule
     {
         CopyDirFiles(__DIR__ . '/js', $_SERVER['DOCUMENT_ROOT'] . '/local/js', true, true);
         CopyDirFiles(__DIR__ . '/admin', $_SERVER['DOCUMENT_ROOT'] . '/bitrix/admin', true, true);
+        CopyDirFiles(__DIR__ . '/components', $_SERVER['DOCUMENT_ROOT'] . '/local/components', true, true);
         return true;
     }
 
     public function UnInstallFiles(): bool
     {
         DeleteDirFilesEx('/local/js/kk/korsac');
+        DeleteDirFilesEx('/local/components/kk/korsac.configurator');
         DeleteDirFiles(__DIR__ . '/admin', $_SERVER['DOCUMENT_ROOT'] . '/bitrix/admin');
         return true;
     }
