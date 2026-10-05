@@ -87,7 +87,9 @@
     }
 
     BitrixTransport.prototype.request = function (action, payload, method) {
-        var options = method === 'GET' ? {getParameters: payload} : {data: payload};
+        var options = method === 'GET'
+            ? {method: 'GET', getParameters: payload}
+            : {method: 'POST', data: payload};
         return this.bx.ajax.runAction(action, options).then(function (response) {
             if (!response || !Object.prototype.hasOwnProperty.call(response, 'data')) {
                 throw new ApiError(response && response.errors);

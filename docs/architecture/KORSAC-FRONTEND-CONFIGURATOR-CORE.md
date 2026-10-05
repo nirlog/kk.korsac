@@ -41,8 +41,10 @@ core.calculate();
 core.addToCart();
 ```
 
-`load()` calls `kk:korsac.Configurator.get` with GET parameters. `calculate()`
-and `addToCart()` call their POST actions. Methods return promises with the
+`load()` calls `kk:korsac.Configurator.get` with an explicit `method: 'GET'`
+and GET parameters; the method option is required because Bitrix otherwise
+defaults `BX.ajax.runAction` to POST. `calculate()` and `addToCart()` call their
+actions with an explicit `method: 'POST'`. Methods return promises with the
 unwrapped Bitrix `data` value. Public errors become
 `KorsacConfiguratorApiError` values with `code`, `message`, `customData`, and
 `errors`.
