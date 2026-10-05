@@ -1,4 +1,4 @@
-# `kk.korsac` v0.4
+# `kk.korsac` v0.7
 
 Серверный Bitrix D7-модуль простых справочников KORSAC options. Требования: PHP 8.2+, Bitrix D7 `highloadblock`, поддерживаемый MySQL/MariaDB и права на создание индексов/удаление пустой legacy schema при migration.
 
@@ -25,6 +25,8 @@ php local/modules/kk.korsac/tools/schema.php check
 
 ```bash
 php local/modules/kk.korsac/tests/Unit/run.php
+node local/modules/kk.korsac/tests/Frontend/run.js
+node local/modules/kk.korsac/tests/Frontend/renderer.run.js
 php local/modules/kk.korsac/tests/Integration/schema_v02_migration_smoke.php
 php local/modules/kk.korsac/tests/Integration/smoke.php
 php local/modules/kk.korsac/tests/Integration/acceptance_smoke.php
@@ -113,7 +115,7 @@ php local/modules/kk.korsac/tests/Integration/default_configuration_cost_smoke.p
 
 ## Ограничения
 
-Интеграционные scripts требуют реальной Bitrix-среды. Bitrix UF не предоставляет переносимый DB default `now`, поэтому timestamps заполняет server-side write layer. Frontend, catalog base-price recalculation, full checkout/payment/delivery, supplier/stock integrations, compatibility engine, SYSTEM ID и admin CRUD не входят в scope. Configured Basket integration and immutable order references are implemented separately from the pricing layer.
+Интеграционные scripts требуют реальной Bitrix-среды. Bitrix UF не предоставляет переносимый DB default `now`, поэтому timestamps заполняет server-side write layer. Catalog-detail/product-gallery integration, final storefront design, catalog base-price recalculation, full checkout/payment/delivery, supplier/stock integrations, compatibility engine, SYSTEM ID и admin CRUD не входят в scope. Configured Basket integration and immutable order references are implemented separately from the pricing layer.
 
 ## Public Configurator API v1
 
@@ -149,6 +151,16 @@ only product identity and selection; displayed prices remain transient server
 projections, and Cart independently calculates the authoritative price and
 immutable snapshot. See
 [`KORSAC-FRONTEND-CONFIGURATOR-CORE.md`](../../../docs/architecture/KORSAC-FRONTEND-CONFIGURATOR-CORE.md).
+
+## Storefront-neutral DOM renderer
+
+The optional `kk.korsac.configurator-renderer` extension adds a plain-JavaScript
+DOM view over the headless core. It supports every public presentation mode,
+server-authoritative prices, debounced race-safe calculation, accessible
+loading/error/Add states and neutral responsive CSS. Existing installations
+must rerun `InstallFiles()` to copy it into `/local/js`; schema reinstallation
+is not required. API, browser harness and acceptance steps are documented in
+[`KORSAC-FRONTEND-CONFIGURATOR-RENDERER.md`](../../../docs/architecture/KORSAC-FRONTEND-CONFIGURATOR-RENDERER.md).
 
 ## Configured Basket and immutable order snapshot
 

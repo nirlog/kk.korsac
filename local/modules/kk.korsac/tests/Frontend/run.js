@@ -105,4 +105,7 @@ test('selection shape is checked locally while server remains whitelist authorit
     }
     process.stdout.write(`${tests.length} tests, ${failed} failures\n`);
     process.exitCode = failed === 0 ? 0 : 1;
+    if (failed === 0) {
+        require('./renderer.run.js');
+    }
 })();
