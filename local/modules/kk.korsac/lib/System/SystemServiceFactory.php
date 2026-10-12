@@ -1,0 +1,19 @@
+<?php
+
+declare(strict_types=1);
+
+namespace KK\Korsac\System;
+use KK\Korsac\Cart\BitrixConfigurationSnapshotRepository;
+/** Explicit wiring; no container or mutable service registry. */
+final class SystemServiceFactory
+{
+    public static function configuration(): SaleAutomationConfiguration { return new SaleAutomationConfiguration(new BitrixSystemSettingsGateway()); }
+    public static function production(): ProductionStatusService { return new ProductionStatusService(new BitrixProductionStatusGateway()); }
+    public static function registration(): SaleHandlerRegistration { return new SaleHandlerRegistration(new BitrixSaleHandlerRegistrationGateway()); }
+    public static function synchronizer(): OrderSystemSynchronizationService
+    {
+        $systems=new BitrixSystemRepository(); $snapshots=new BitrixConfigurationSnapshotRepository();
+        return new OrderSystemSynchronizationService(self::configuration(),$systems,new SystemCreationService($systems,new SystemIdGenerator(new BitrixSystemSequenceAllocator()),$snapshots),$snapshots,self::production());
+    }
+    public static function automation(): SaleOrderAutomation { return new SaleOrderAutomation(self::configuration(),new BitrixOrderProjectionAdapter(),self::synchronizer(),new BitrixSaleSynchronizationLogger()); }
+}

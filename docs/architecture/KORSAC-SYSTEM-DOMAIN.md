@@ -223,11 +223,11 @@ changes must not alter SYSTEM_ID.
 
 ACTIVE is a technical lifecycle value; CANCELLED is reserved. Neither encodes
 production progress. «Передан кладовщику», «Не хватает комплектующих», «Отправлен
-на сборку» and «Готов к выдаче» belong to later production-status work.
+на сборку» and «Готов к выдаче» belong to the separate production-status layer introduced in v0.10.
 
 ## Installation, upgrade, health and uninstall
 
-Module version is 0.9.0, dated 2026-10-12. The new migration is
+System core was introduced in module version 0.9.0, dated 2026-10-12. The new migration is
 `2026_10_12_006_system_core`. Fresh `DoInstall()` creates the existing HL schema,
 existing snapshots and all three System tables. On an up-to-date 0.8 installation,
 only migration 006 is newly recorded. Previous migration IDs are unchanged.
@@ -257,11 +257,11 @@ HL data and migration history. Physical history is business data.
 
 ## Validation and live deployment gate
 
-The earlier live review build failed the integer-contract/idempotency check.
-The corrected signed-INT schema has not yet passed a live retest. This cloud
-checkout has no initialized Bitrix installation or access to the test database.
-Before merge, rerun all four commands against the corrected schema on the
-standalone KORSAC test server and record their actual results:
+The earlier review build exposed the integer-contract/idempotency mismatch.
+PR #20 was subsequently merged and live-validated on the standalone installation,
+as reported for the v0.10 task. This cloud checkout itself has no initialized
+Bitrix installation or test-database access. Preserve the following core
+regression checks when validating the next release on the standalone server:
 
 ```bash
 php local/modules/kk.korsac/tools/schema.php migrate
@@ -334,8 +334,10 @@ Implemented: persistent System identity, safe monthly allocator, explicit creati
 existing snapshot relation, actual component persistence, D7 mappings, migration
 and schema health support. No HL block is added or changed by this PR.
 
-Planned separately: authoritative Sale event automation, production statuses and
-history, physical handoff/user assignment, ownership lifecycle, public Passport
+v0.10 implements authoritative Sale synchronization and separate production
+status/history; see [KORSAC-SYSTEM-SALE-AUTOMATION.md](KORSAC-SYSTEM-SALE-AUTOMATION.md).
+System lifecycle remains separate. Planned separately: physical handoff/user
+assignment, ownership lifecycle, public Passport
 and privacy-safe DTOs, PUBLIC_ID/SECRET_CODE/QR, transfer and warranty, service
 repair/upgrade/data correction, inquiries and Bitrix Admin UI. Payment, delivery,
 inventory, suppliers and compatibility engines remain outside this core. No

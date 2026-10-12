@@ -35,6 +35,8 @@ $systemRepo = static fn() => new class implements SystemRepositoryInterface {
     }
     public function findById(int $id): ?SystemRecord { foreach ($this->items as $s) if ($s->id === $id) return $s; return null; }
     public function findBySystemId(string $id): ?SystemRecord { foreach ($this->items as $s) if ($s->systemId === $id) return $s; return null; }
+    public function findByOrder(int $orderId): array { return array_values(array_filter($this->items,static fn(SystemRecord $s):bool=>$s->source->orderId===$orderId)); }
+    public function findByOrderBasket(int $orderId,int $basketId): array { return array_values(array_filter($this->findByOrder($orderId),static fn(SystemRecord $s):bool=>$s->source->orderBasketId===$basketId)); }
     public function findByOrderUnit(int $orderId, int $basketId, int $unitIndex, bool $currentRead = false): ?SystemRecord {
         $this->currentReadUsed = $this->currentReadUsed || $currentRead;
         foreach ($this->items as $s) if ([$s->source->orderId,$s->source->orderBasketId,$s->source->orderUnitIndex] === [$orderId,$basketId,$unitIndex]) return $s;

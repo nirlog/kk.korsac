@@ -48,6 +48,16 @@ final class BitrixSystemRepository implements SystemRepositoryInterface
         }
         return $this->find(['=ORDER_ID'=>$orderId, '=ORDER_BASKET_ID'=>$basketId, '=ORDER_UNIT_INDEX'=>$unitIndex]);
     }
+    public function findByOrder(int $orderId): array { return $this->findMany(['=ORDER_ID'=>$orderId]); }
+    public function findByOrderBasket(int $orderId,int $basketId): array { return $this->findMany(['=ORDER_ID'=>$orderId,'=ORDER_BASKET_ID'=>$basketId]); }
+    private function findMany(array $filter): array
+    {
+        try {
+            $rows=SystemTable::getList(['filter'=>$filter,'order'=>['ORDER_BASKET_ID'=>'ASC','ORDER_UNIT_INDEX'=>'ASC']]); $systems=[];
+            while ($row=$rows->fetch()) $systems[]=$this->hydrate($row);
+            return $systems;
+        } catch (Throwable) { throw new SystemException('system_persist_failed'); }
+    }
     private function find(array $filter): ?SystemRecord
     {
         try {

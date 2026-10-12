@@ -26,7 +26,7 @@ final class BitrixConfigurationSnapshotRepository implements ConfigurationSnapsh
         $row = ConfigurationSnapshotTable::getList(['filter'=>['=SNAPSHOT_KEY'=>$snapshotKey], 'limit'=>1])->fetch();
         if (!$row) return null;
         $payload = json_decode((string)$row['PAYLOAD'], true, 512, JSON_THROW_ON_ERROR);
-        return new ConfigurationSnapshot((string)$row['SNAPSHOT_KEY'],(string)$row['SNAPSHOT_HASH'],(string)$row['SITE_ID'],(int)$row['IBLOCK_ID'],(int)$row['PRODUCT_ID'],(int)$row['PRICE_TYPE_ID'],(string)$row['CURRENCY'],(int)$row['BASE_PRICE_MINOR'],(int)$row['CONFIGURATION_DELTA_MINOR'],(int)$row['FINAL_PRICE_MINOR'],(string)$row['PAYLOAD'],$payload['display']);
+        return new ConfigurationSnapshot((string)$row['SNAPSHOT_KEY'],(string)$row['SNAPSHOT_HASH'],(string)$row['SITE_ID'],(int)$row['IBLOCK_ID'],(int)$row['PRODUCT_ID'],(int)$row['PRICE_TYPE_ID'],(string)$row['CURRENCY'],(int)$row['BASE_PRICE_MINOR'],(int)$row['CONFIGURATION_DELTA_MINOR'],(int)$row['FINAL_PRICE_MINOR'],(string)$row['PAYLOAD'],$payload['display'],(int)$row['SCHEMA_VERSION']);
     }
 
     public function deleteUnattached(ConfigurationSnapshotReference $reference): void
