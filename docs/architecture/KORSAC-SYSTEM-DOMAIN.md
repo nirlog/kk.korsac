@@ -28,7 +28,7 @@ it. Each `YYMM` period has a persistent counter in
 | Column | SQL contract |
 | --- | --- |
 | PERIOD | CHAR(4), primary key |
-| LAST_VALUE | INT UNSIGNED, last consumed number |
+| LAST_VALUE | Signed INT, last consumed number (application ceiling 9999) |
 | UPDATED_AT | DATETIME |
 
 `BitrixSystemSequenceAllocator` uses a **separate nonpersistent D7 mysqli
@@ -58,8 +58,24 @@ silently reusing a period.
 
 ## System persistence
 
-`b_kk_korsac_system` uses an auto-increment unsigned integer `ID` as the internal
+`b_kk_korsac_system` uses an auto-increment signed INT `ID` as the internal
 primary key. `SYSTEM_ID` is the separate unique 12-character human identity.
+
+Bitrix D7 `IntegerField` is the authoritative ORM boundary. System-core integer
+identities/references use **positive signed INT32, `1..2147483647`**, with SQL
+`INT`, including internal auto-increment IDs, IBLOCK_ID, PRODUCT_ID, ORDER_ID,
+ORDER_BASKET_ID, ORDER_UNIT_INDEX, USER_ID and component SYSTEM_INTERNAL_ID.
+Optional catalog references and USER_ID may be NULL. LAST_VALUE is also signed
+INT but has the smaller allocation range `1..9999`. No System-core D7 integer
+field advertises or accepts identifiers up to 4294967295.
+
+Earlier live Bitrix/PHP 8.2/MySQL testing of the review build confirmed that D7
+coerced ORDER_ID=4294967295 and ORDER_BASKET_ID=2523807056 to 2147483647 despite
+the former unsigned SQL columns. This changed the source identity on persistence
+and broke repeated creation. Validation now rejects identifiers above the signed
+maximum with `system_source_invalid` before any number allocation; component
+parent references use the same maximum. Do not rely on SQL capacity to extend
+the ORM contract.
 
 **Domain naming convention:** `SYSTEM_ID` always means the immutable human
 `KS-YYMM-NNNN` business identifier. Child records reference numeric System.ID
@@ -107,7 +123,7 @@ installed physical components are distinct concepts.
 `SystemCreationService` takes an array with only SITE_ID, ORDER_ID,
 ORDER_BASKET_ID, ORDER_UNIT_INDEX, SYSTEM_TYPE, MODEL_NAME and optional IBLOCK_ID,
 PRODUCT_ID, CONFIG_SNAPSHOT_KEY. Integer inputs must be actual positive integers
-within the unsigned INT range; text is bounded UTF-8 without control characters.
+within the positive signed INT32 range (`1..2147483647`); text is bounded UTF-8 without control characters.
 Unknown fields, SYSTEM_ID, USER_ID, lifecycle overrides, PUBLIC_ID, SECRET_CODE
 and warranty fields are rejected.
 
@@ -171,7 +187,7 @@ controller yet.
 
 | Columns | Meaning |
 | --- | --- |
-| ID | Internal unsigned auto-increment primary key |
+| ID | Internal signed INT auto-increment primary key |
 | SYSTEM_INTERNAL_ID | Internal numeric parent System.ID |
 | TYPE_CODE | Component category, bounded uppercase code (e.g. GPU, SSD, RAM) |
 | SLOT_KEY | Stable physical position (GPU, SSD_1, SSD_2, RAM_1, etc.) |
@@ -241,9 +257,11 @@ HL data and migration history. Physical history is business data.
 
 ## Validation and live deployment gate
 
-Live Bitrix/MySQL validation has not been run in this cloud checkout, which has
-no initialized Bitrix installation or test database. Before merge, run all four
-commands on the standalone KORSAC test server and record their actual results:
+The earlier live review build failed the integer-contract/idempotency check.
+The corrected signed-INT schema has not yet passed a live retest. This cloud
+checkout has no initialized Bitrix installation or access to the test database.
+Before merge, rerun all four commands against the corrected schema on the
+standalone KORSAC test server and record their actual results:
 
 ```bash
 php local/modules/kk.korsac/tools/schema.php migrate
@@ -252,11 +270,19 @@ php local/modules/kk.korsac/tests/Integration/system_core_smoke.php
 php local/modules/kk.korsac/tests/Integration/system_core_smoke.php --confirm-write --concurrency=4
 ```
 
-The pre-merge revision of migration 006 uses SYSTEM_INTERNAL_ID in components.
-If an earlier review build was already installed with a numeric SYSTEM_ID
-column, it is incompatible: health checks must fail rather than certify it. Use
-an explicitly reviewed data-preserving schema correction for that test database;
-normal migration never drops/rebuilds physical history or silently renames it.
+PR #20 is unreleased. Migration identity remains
+`2026_10_12_006_system_core`; its intended schema is corrected in place, without
+a production migration solely for an unmerged review build. All three System
+core tables now use signed INT, and components use SYSTEM_INTERNAL_ID.
+
+A test database that already applied an earlier unsigned draft of migration 006
+must be reset/recreated if disposable, or explicitly corrected with a reviewed,
+data-preserving schema change before these commands are rerun. The same applies
+to older component numeric SYSTEM_ID columns. Migration history may already mark
+006 as applied, so rerunning migrate alone does not convert those columns.
+Health checks explicitly reject unsigned INT fields as incompatible; they must
+not certify the old review schema. Do not silently drop/rebuild physical history
+or change source data to hide the mismatch.
 
 ```bash
 php local/modules/kk.korsac/tests/Unit/run.php
@@ -275,9 +301,14 @@ php local/modules/kk.korsac/tests/Integration/system_core_smoke.php --confirm-wr
 php local/modules/kk.korsac/tests/Integration/system_core_smoke.php --confirm-write --concurrency=4
 ```
 
-Write smoke creates one synthetic custom System (no real Order), verifies reads,
-idempotency, owner/lifecycle and two component positions with active/history
-filtering. It rolls back System/component fixtures and verifies their absence.
+Write smoke uses ORDER_ID=2147483646 and a random ORDER_BASKET_ID in
+`2000000000..2147483646`, with a collision precheck; both are valid synthetic
+positive signed INT32 values. It creates one custom System (no real Order),
+verifies persisted source IDs exactly match the request, reads, idempotency,
+owner/lifecycle and two component positions with active/history filtering.
+A counting wrapper around the real allocator verifies the fixture allocates
+exactly once across first creation and repeat, independently of unrelated
+concurrent allocations. It rolls back System/component fixtures and verifies their absence.
 Sequence allocation uses its separate connection and **remains committed**: the
 first command consumes one monthly number; concurrency=N consumes N+1. This is
 intentional and checks that a rollback cannot reclaim identifiers. Never run it
@@ -291,7 +322,9 @@ Pure tests cover ID formatting/limits/month/timezone, source/domain validation,
 idempotency/race recovery/gaps, snapshot compatibility, forbidden overrides,
 component history, safe persistence failures, fresh/idempotent migration,
 upgrade history, component parent-reference naming, every immutable ORM field,
-mutable-field delegation and incompatible schema/index detection. Live Bitrix/MySQL smoke
+mutable-field delegation, signed INT32 boundary acceptance/rejection before
+allocation, unsigned review-schema rejection and incompatible schema/index
+detection. Live Bitrix/MySQL smoke
 must still be run in the deployment test installation; pure tests alone do not
 prove database locking or deployed ORM compatibility.
 

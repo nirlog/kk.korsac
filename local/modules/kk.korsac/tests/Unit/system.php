@@ -98,7 +98,7 @@ $test('System request accepts MODEL and CUSTOM with coherent optional product id
     $input=$systemInput()+['IBLOCK_ID'=>2,'PRODUCT_ID'=>4]; $assert(SystemCreationRequest::fromArray($input)->productId === 4);
 });
 $test('System request rejects malformed source, bounds, product pairs and snapshot keys', static function () use ($systemInput,$systemError): void {
-    foreach (['ORDER_ID','ORDER_BASKET_ID','ORDER_UNIT_INDEX'] as $key) foreach ([0,-1,'1',1.5,true,4294967296,null] as $value) {
+    foreach (['ORDER_ID','ORDER_BASKET_ID','ORDER_UNIT_INDEX'] as $key) foreach ([0,-1,'1',1.5,true,2147483648,4294967295,null] as $value) {
         $input=$systemInput(); $input[$key]=$value; $systemError(static fn()=>SystemCreationRequest::fromArray($input),'system_source_invalid');
     }
     foreach (['SITE_ID'=>['',str_repeat('a',11),"s1\0"], 'MODEL_NAME'=>[' ',str_repeat('я',256),"bad\nname",[]]] as $key=>$values) foreach ($values as $value) {
@@ -153,7 +153,7 @@ $test('System migration refuses incompatible schema before writing any other tab
 });
 $test('System health detects missing columns prefix indexes and MariaDB integer widths correctly', static function () use ($assert,$systemGateway): void {
     $g=$systemGateway(); (new SystemCore($g))->up(); $t=&$g->tables[SystemSchemaDefinition::SYSTEM];
-    $t['columns']['ID']['type']='int(10) unsigned'; $assert((new SystemSchemaSelfCheck($g))->run()['ok']);
+    $t['columns']['ID']['type']='int(11)'; $assert((new SystemSchemaSelfCheck($g))->run()['ok']);
     $t['indexes']['ux_kk_korsac_system_id']['partial']=true; unset($t['columns']['SITE_ID']);
     $codes=array_column((new SystemSchemaSelfCheck($g))->run()['errors'],'code'); $assert(in_array('system_column_missing',$codes,true) && in_array('system_index_mismatch',$codes,true));
 });
@@ -231,13 +231,13 @@ $test('System component schema reserves SYSTEM_ID for the human business identit
     $tables = SystemSchemaDefinition::tables();
     $component = $tables[SystemSchemaDefinition::COMPONENT];
     $assert(!isset($component['columns']['SYSTEM_ID']));
-    $assert($component['columns']['SYSTEM_INTERNAL_ID']['type'] === 'int unsigned' && !$component['columns']['SYSTEM_INTERNAL_ID']['nullable']);
+    $assert($component['columns']['SYSTEM_INTERNAL_ID']['type'] === 'int' && !$component['columns']['SYSTEM_INTERNAL_ID']['nullable']);
     foreach (['ix_kk_korsac_component_system'=>['SYSTEM_INTERNAL_ID'], 'ix_kk_korsac_component_slot'=>['SYSTEM_INTERNAL_ID','SLOT_KEY'], 'ix_kk_korsac_component_active'=>['SYSTEM_INTERNAL_ID','REMOVED_AT']] as $name=>$columns) {
         $assert($component['indexes'][$name]['columns'] === $columns);
     }
     $assert($tables[SystemSchemaDefinition::SYSTEM]['columns']['SYSTEM_ID']['type'] === 'varchar(12)');
     $sql = SystemSchemaDefinition::createSql(SystemSchemaDefinition::COMPONENT);
-    $assert(str_contains($sql, '`SYSTEM_INTERNAL_ID` INT UNSIGNED NOT NULL') && !str_contains($sql, '`SYSTEM_ID`'));
+    $assert(str_contains($sql, '`SYSTEM_INTERNAL_ID` INT NOT NULL') && !str_contains($sql, '`SYSTEM_ID`'));
     $gateway=$systemGateway(); (new SystemCore($gateway))->up();
     $description=&$gateway->tables[SystemSchemaDefinition::COMPONENT];
     $description['columns']['SYSTEM_ID']=$description['columns']['SYSTEM_INTERNAL_ID'];
@@ -246,4 +246,58 @@ $test('System component schema reserves SYSTEM_ID for the human business identit
     $errors=(new SystemSchemaSelfCheck($gateway))->run()['errors'];
     $assert(in_array(['code'=>'system_column_missing','table'=>SystemSchemaDefinition::COMPONENT,'field'=>'SYSTEM_INTERNAL_ID'],$errors,true));
     $assert(in_array(['code'=>'system_index_mismatch','table'=>SystemSchemaDefinition::COMPONENT,'index'=>'ix_kk_korsac_component_system'],$errors,true));
+});
+
+foreach (['ORDER_ID'=>'orderId','ORDER_BASKET_ID'=>'orderBasketId','ORDER_UNIT_INDEX'=>'orderUnitIndex','IBLOCK_ID'=>'iblockId','PRODUCT_ID'=>'productId'] as $field=>$property) {
+    $test('System '.$field.' honors positive signed INT32 before any allocation', static function () use ($assert,$systemInput,$systemError,$systemRepo,$systemSequence,$systemSnapshots,$systemClock,$field,$property): void {
+        $input = $systemInput()+['IBLOCK_ID'=>2,'PRODUCT_ID'=>4];
+        $input[$field] = 2147483647;
+        $assert(SystemCreationRequest::fromArray($input)->{$property} === 2147483647);
+        $repo = $systemRepo(); $sequence = $systemSequence(); $snapshots = $systemSnapshots();
+        $service = new SystemCreationService($repo,new SystemIdGenerator($sequence),$snapshots,$systemClock);
+        foreach ([2147483648,4294967295] as $invalid) {
+            $input[$field] = $invalid;
+            $systemError(static fn()=>$service->create($input),'system_source_invalid');
+            $assert($sequence->periods === [] && $repo->items === [] && $snapshots->reads === 0);
+        }
+        $input[$field] = 2147483647;
+        $created = $service->create($input);
+        $assert($created->source->{$property} === 2147483647 && $sequence->periods === ['2610'=>1]);
+        $assert($service->create($input)->id === $created->id && $sequence->periods === ['2610'=>1]);
+    });
+}
+$test('System component parent and stored ID honor positive signed INT32', static function () use ($assert,$systemClock,$systemError): void {
+    $now = $systemClock();
+    $component = new SystemComponent(2147483647,2147483647,'SSD','SSD_1','SSD 1','Disk',null,$now,null,$now,$now);
+    $assert($component->systemInternalId === 2147483647 && $component->id === 2147483647);
+    foreach ([2147483648,4294967295] as $invalid) {
+        $systemError(static fn()=>new SystemComponent(0,$invalid,'SSD','SSD_1','SSD 1','Disk',null,$now,null,$now,$now),'system_component_invalid');
+        $systemError(static fn()=>new SystemComponent($invalid,1,'SSD','SSD_1','SSD 1','Disk',null,$now,null,$now,$now),'system_component_invalid');
+    }
+});
+$test('System migration uses signed D7 INT fields and rejects the unsigned review schema', static function () use ($assert,$systemGateway,$systemError): void {
+    $identityFields = [
+        SystemSchemaDefinition::SYSTEM=>['ID','IBLOCK_ID','PRODUCT_ID','ORDER_ID','ORDER_BASKET_ID','ORDER_UNIT_INDEX','USER_ID'],
+        SystemSchemaDefinition::COMPONENT=>['ID','SYSTEM_INTERNAL_ID'],
+        SystemSchemaDefinition::SEQUENCE=>['LAST_VALUE'],
+    ];
+    $definitions = SystemSchemaDefinition::tables();
+    $gateway = $systemGateway(); (new SystemCore($gateway))->up();
+    foreach ($identityFields as $table=>$fields) {
+        $assert(!str_contains(SystemSchemaDefinition::createSql($table),'UNSIGNED'));
+        foreach ($fields as $field) {
+            $assert($definitions[$table]['columns'][$field]['type'] === 'int');
+            $gateway->tables[$table]['columns'][$field]['type'] = 'int(11)';
+        }
+    }
+    $assert((new SystemSchemaSelfCheck($gateway))->run()['ok']);
+    foreach ($identityFields as $table=>$fields) foreach ($fields as $field) {
+        $gateway->tables[$table]['columns'][$field]['type'] = 'int(10) unsigned';
+        $errors = (new SystemSchemaSelfCheck($gateway))->run()['errors'];
+        $assert(in_array(['code'=>'system_column_mismatch','table'=>$table,'field'=>$field],$errors,true));
+        $writes = $gateway->writes;
+        $systemError(static fn()=>(new SystemCore($gateway))->up(),'system_schema_incompatible');
+        $assert($gateway->writes === $writes);
+        $gateway->tables[$table]['columns'][$field]['type'] = 'int(11)';
+    }
 });

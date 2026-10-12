@@ -16,7 +16,7 @@ final readonly class SystemCreationRequest
         $allowed = ['SITE_ID','ORDER_ID','ORDER_BASKET_ID','ORDER_UNIT_INDEX','SYSTEM_TYPE','MODEL_NAME','IBLOCK_ID','PRODUCT_ID','CONFIG_SNAPSHOT_KEY'];
         if (array_diff(array_keys($input), $allowed)) throw new SystemException('system_source_invalid');
         foreach (['ORDER_ID','ORDER_BASKET_ID','ORDER_UNIT_INDEX'] as $key) {
-            if (!isset($input[$key]) || !is_int($input[$key]) || $input[$key] < 1 || $input[$key] > 4294967295) {
+            if (!isset($input[$key]) || !is_int($input[$key]) || $input[$key] < 1 || $input[$key] > 2147483647) {
                 throw new SystemException('system_source_invalid');
             }
         }
@@ -31,7 +31,7 @@ final readonly class SystemCreationRequest
         $product = $input['PRODUCT_ID'] ?? null;
         if (($iblock === null) !== ($product === null)) throw new SystemException('system_source_invalid');
         foreach ([$iblock, $product] as $value) {
-            if ($value !== null && (!is_int($value) || $value < 1 || $value > 4294967295)) throw new SystemException('system_source_invalid');
+            if ($value !== null && (!is_int($value) || $value < 1 || $value > 2147483647)) throw new SystemException('system_source_invalid');
         }
         $key = $input['CONFIG_SNAPSHOT_KEY'] ?? null;
         if ($key !== null && (!is_string($key) || !preg_match('/\A[a-f0-9]{64}\z/D', $key))) throw new SystemException('system_source_invalid');

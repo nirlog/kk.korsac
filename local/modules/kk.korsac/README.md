@@ -199,8 +199,13 @@ components and their serial numbers/history are separate internal records.
 Child records use `SYSTEM_INTERNAL_ID` (`SystemComponent::$systemInternalId`) for
 numeric System.ID; `SYSTEM_ID` always denotes the human KS identifier. Ordinary
 System ORM updates allow only USER_ID, LIFECYCLE_STATE and UPDATED_AT, preserving
-all creation-time source fields. Live Bitrix/MySQL validation remains required
-on the standalone test server before merge.
+all creation-time source fields. System-core identity/reference
+columns use signed INT and positive D7-compatible IDs `1..2147483647`; source
+IDs above that range are rejected before sequence allocation. The earlier live
+review build exposed unsigned/D7 coercion; the corrected schema must pass a
+live retest on the standalone test server before merge. An already-applied
+unsigned draft of migration 006 requires disposable test DB reset or an explicit
+data-preserving schema correction; migrate alone does not rewrite it.
 
 ```bash
 php local/modules/kk.korsac/tests/Integration/system_core_smoke.php

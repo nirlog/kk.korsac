@@ -11,8 +11,9 @@ final class SystemSchemaDefinition
     public const COMPONENT = 'b_kk_korsac_system_component';
     public static function tables(): array
     {
-        $id = ['type'=>'int unsigned', 'nullable'=>false, 'auto'=>true];
-        $integer = ['type'=>'int unsigned', 'nullable'=>false];
+        // D7 IntegerField is the boundary: identity/reference columns use signed INT32.
+        $id = ['type'=>'int', 'nullable'=>false, 'auto'=>true];
+        $integer = ['type'=>'int', 'nullable'=>false];
         $date = ['type'=>'datetime', 'nullable'=>false];
         $string = static fn(int $size, bool $nullable = false): array => ['type'=>"varchar({$size})", 'size'=>$size, 'nullable'=>$nullable];
         $index = static fn(array $columns, bool $unique = false): array => ['columns'=>$columns, 'unique'=>$unique];
