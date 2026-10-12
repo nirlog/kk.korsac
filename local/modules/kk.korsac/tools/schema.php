@@ -9,6 +9,10 @@ use KK\Korsac\Install\OptionMigrationStore;
 use KK\Korsac\Install\SchemaMigrationService;
 use KK\Korsac\Install\BitrixSnapshotTableGateway;
 use KK\Korsac\Install\SnapshotMigrationService;
+use KK\Korsac\Install\SystemMigrationService;
+use KK\Korsac\Install\BitrixSystemTableGateway;
+use KK\Korsac\Health\SystemSchemaSelfCheck;
+use KK\Korsac\System\SystemException;
 
 $documentRoot = ($_SERVER['DOCUMENT_ROOT'] ?? '') ?: dirname(__DIR__, 4);
 $_SERVER['DOCUMENT_ROOT'] = $documentRoot;
@@ -20,11 +24,24 @@ $gateway = new BitrixSchemaGateway();
 $command = $argv[1] ?? 'check';
 if ($command === 'migrate') {
     $store = new OptionMigrationStore();
-    $applied = array_merge((new SchemaMigrationService($store, $gateway))->migrate(), (new SnapshotMigrationService($store, new BitrixSnapshotTableGateway()))->migrate());
+    try {
+        $applied = array_merge(
+            (new SchemaMigrationService($store, $gateway))->migrate(),
+            (new SnapshotMigrationService($store, new BitrixSnapshotTableGateway()))->migrate(),
+            (new SystemMigrationService($store, new BitrixSystemTableGateway()))->migrate(),
+        );
+    } catch (SystemException $error) {
+        fwrite(STDERR, json_encode(['ok'=>false, 'error'=>$error->diagnostic()]) . PHP_EOL);
+        exit(1);
+    }
     echo json_encode(['applied' => $applied], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), PHP_EOL;
     exit(0);
 }
 if ($command !== 'check') { fwrite(STDERR, "Usage: php schema.php [check|migrate]\n"); exit(2); }
 $result = (new SchemaSelfCheck($gateway))->run();
+$systems = (new SystemSchemaSelfCheck(new BitrixSystemTableGateway()))->run();
+$result['systems'] = $systems;
+$result['ok'] = $result['ok'] && $systems['ok'];
+$result['errors'] = array_merge($result['errors'], $systems['errors']);
 echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), PHP_EOL;
 exit($result['ok'] ? 0 : 1);
