@@ -21,5 +21,6 @@ final readonly class ConfigurationSnapshot
         public int $finalPriceMinor,
         public string $payload,
         public array $display,
+        public int $schemaVersion = self::SCHEMA_VERSION,
     ) {}
 }

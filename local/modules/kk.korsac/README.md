@@ -1,4 +1,4 @@
-# `kk.korsac` v0.9
+# `kk.korsac` v0.10
 
 Серверный Bitrix D7-модуль простых справочников KORSAC options. Требования: PHP 8.2+, Bitrix D7 `highloadblock`, поддерживаемый MySQL/MariaDB и права на создание индексов/удаление пустой legacy schema при migration.
 
@@ -115,7 +115,7 @@ php local/modules/kk.korsac/tests/Integration/default_configuration_cost_smoke.p
 
 ## Ограничения
 
-Интеграционные scripts требуют реальной Bitrix-среды. Bitrix UF не предоставляет переносимый DB default `now`, поэтому timestamps заполняет server-side write layer. Catalog-detail/product-gallery integration, final storefront design, catalog base-price recalculation, full checkout/payment/delivery, supplier/stock integrations, compatibility engine, SYSTEM ID и admin CRUD не входят в scope. Configured Basket integration and immutable order references are implemented separately from the pricing layer.
+Интеграционные scripts требуют реальной Bitrix-среды. Bitrix UF не предоставляет переносимый DB default `now`, поэтому timestamps заполняет server-side write layer. Catalog-detail/product-gallery integration, final storefront design, catalog base-price recalculation, full checkout/payment/delivery, supplier/stock integrations, compatibility engine и admin CRUD не входят в scope этого pricing layer. Configured Basket integration and immutable order references are implemented separately from the pricing layer.
 
 ## Public Configurator API v1
 
@@ -216,6 +216,48 @@ php local/modules/kk.korsac/tests/Integration/system_core_smoke.php --confirm-wr
 The default smoke is read-only. Full contracts, migration, privacy, business
 timezone and manual validation are in
 [`KORSAC-SYSTEM-DOMAIN.md`](../../../docs/architecture/KORSAC-SYSTEM-DOMAIN.md).
-Passport, warranty, production statuses, Sale event automation, service workflow,
-ownership, inquiries and System Admin UI remain future stages. All persistence
+Passport, warranty, service workflow, ownership, inquiries and System Admin UI
+remain future stages; Sale synchronization and production status/history are
+implemented in v0.10. All persistence
 belongs to standalone KORSAC, with no King-Komp site/database integration.
+
+
+## Sale → System automation and production status
+
+v0.10 adds migration `2026_10_12_007_system_sale_automation` with separate current
+production status/history tables. Migration 006/System core is unchanged.
+`schema.php migrate` also ensures one persistent `sale/OnSaleOrderSaved` handler;
+normal uninstall removes executable registration and retains all business data.
+Health now covers HL, existing snapshots, System core, production schema and
+handler registration.
+
+Automation defaults to disabled. Configure the exact real Sale ORDER STATUS_ID;
+never infer it from the translated label «Согласован». Eligible PC rows require
+MODULE=kk.korsac and KORSAC_CONFIGURED=Y with validated immutable snapshot metadata.
+Each positive whole quantity unit (maximum 1000 per line) maps to one System.
+All lines and existing-unit conflicts are preflighted before number allocation.
+Order edits never delete/cancel/reassign Systems. Retry repairs missing initial
+WAREHOUSE status and preserves advanced production state. Status codes/history
+are independent from lifecycle and ownership.
+
+```bash
+php local/modules/kk.korsac/tools/schema.php migrate
+php local/modules/kk.korsac/tools/schema.php check
+php local/modules/kk.korsac/tools/system.php sale-config show
+php local/modules/kk.korsac/tools/system.php sale-config set --status=<ORDER_STATUS_ID>
+php local/modules/kk.korsac/tools/system.php inspect-order --order=<ORDER_ID>
+php local/modules/kk.korsac/tools/system.php sync-order --order=<ORDER_ID>
+php local/modules/kk.korsac/tools/system.php status-set --system=<KS-YYMM-NNNN> --status=ASSEMBLY
+php local/modules/kk.korsac/tests/Integration/system_sale_automation_smoke.php
+# Actual dedicated test Order only: persists Systems/history, no Order edits.
+php local/modules/kk.korsac/tests/Integration/system_sale_automation_smoke.php --order=<TEST_ORDER_ID> --confirm-write
+```
+
+Manual sync uses the same service as automation and requires the configured
+trigger even when automatic execution is disabled; there is no force mode.
+Labels can be overridden with `system.php status-label set` without changing codes.
+Event failures log only order ID/safe code and do not re-save or fail the saved
+Order. Details, operational commands and outstanding live Sale checks are in
+[`KORSAC-SYSTEM-SALE-AUTOMATION.md`](../../../docs/architecture/KORSAC-SYSTEM-SALE-AUTOMATION.md).
+Passport, warranty, ownership, service, public API, System Admin UI and frontend
+remain future work. No King-Komp runtime integration is introduced.

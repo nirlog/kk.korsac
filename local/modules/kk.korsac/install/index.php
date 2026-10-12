@@ -11,6 +11,9 @@ use KK\Korsac\Install\BitrixSnapshotTableGateway;
 use KK\Korsac\Install\SnapshotMigrationService;
 use KK\Korsac\Install\SystemMigrationService;
 use KK\Korsac\Install\BitrixSystemTableGateway;
+use KK\Korsac\Install\ProductionStatusMigrationService;
+use KK\Korsac\Install\BitrixProductionStatusTableGateway;
+use KK\Korsac\System\SystemServiceFactory;
 
 class kk_korsac extends CModule
 {
@@ -18,7 +21,7 @@ class kk_korsac extends CModule
     public $MODULE_VERSION;
     public $MODULE_VERSION_DATE;
     public $MODULE_NAME = 'KORSAC domain data';
-    public $MODULE_DESCRIPTION = 'KORSAC configuration, pricing, immutable snapshots and configured Basket integration.';
+    public $MODULE_DESCRIPTION = 'KORSAC configuration, physical Systems, production workflow and Sale integration.';
     public $PARTNER_NAME = 'KORSAC';
     public $PARTNER_URI = '';
 
@@ -55,6 +58,7 @@ class kk_korsac extends CModule
             (new SchemaMigrationService($store, $gateway))->migrate();
             (new SnapshotMigrationService($store, new BitrixSnapshotTableGateway()))->migrate();
             (new SystemMigrationService($store, new BitrixSystemTableGateway()))->migrate();
+            (new ProductionStatusMigrationService($store,new BitrixProductionStatusTableGateway(),SystemServiceFactory::registration()))->migrate();
             $this->InstallFiles();
         } catch (Throwable $exception) {
             if ($registeredHere) {
@@ -66,7 +70,9 @@ class kk_korsac extends CModule
 
     public function DoUninstall(): void
     {
-        // Retain HL data, snapshots, physical Systems/components, sequence state and migration history.
+        // Retain HL data, snapshots, physical Systems/components, sequence state, production status/history and migration history.
+        Loader::registerNamespace('KK\\Korsac', dirname(__DIR__) . '/lib');
+        SystemServiceFactory::registration()->remove();
         $this->UnInstallFiles();
         UnRegisterModule($this->MODULE_ID);
     }

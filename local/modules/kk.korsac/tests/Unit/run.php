@@ -587,6 +587,7 @@ require __DIR__ . '/cart.php';
 require __DIR__ . '/pricing_admin.php';
 require __DIR__ . '/component.php';
 require __DIR__ . '/system.php';
+require __DIR__ . '/system_sale.php';
 
 $failed = 0;
 foreach ($tests as $name => $callback) { try { $callback(); echo "PASS {$name}\n"; } catch (Throwable $e) { ++$failed; fwrite(STDERR, "FAIL {$name}: {$e->getMessage()}\n"); } }

@@ -35,6 +35,8 @@ $systemRepo = static fn() => new class implements SystemRepositoryInterface {
     }
     public function findById(int $id): ?SystemRecord { foreach ($this->items as $s) if ($s->id === $id) return $s; return null; }
     public function findBySystemId(string $id): ?SystemRecord { foreach ($this->items as $s) if ($s->systemId === $id) return $s; return null; }
+    public function findByOrder(int $orderId): array { return array_values(array_filter($this->items,static fn(SystemRecord $s):bool=>$s->source->orderId===$orderId)); }
+    public function findByOrderBasket(int $orderId,int $basketId): array { return array_values(array_filter($this->findByOrder($orderId),static fn(SystemRecord $s):bool=>$s->source->orderBasketId===$basketId)); }
     public function findByOrderUnit(int $orderId, int $basketId, int $unitIndex, bool $currentRead = false): ?SystemRecord {
         $this->currentReadUsed = $this->currentReadUsed || $currentRead;
         foreach ($this->items as $s) if ([$s->source->orderId,$s->source->orderBasketId,$s->source->orderUnitIndex] === [$orderId,$basketId,$unitIndex]) return $s;
@@ -76,7 +78,7 @@ $test('System ID namespaces follow the server creation month and timezone', stat
     $assert($ids->generate(new DateTimeImmutable('2026-10-31 23:59:59')) === 'KS-2610-0001');
     $assert($ids->generate(new DateTimeImmutable('2026-11-01 00:00:00')) === 'KS-2611-0001');
     $assert($ids->generate(new DateTimeImmutable('2026-10-31 23:59:59')) === 'KS-2610-0002');
-    $assert($ids->generate(new DateTimeImmutable('2026-10-31 22:00:00+00:00')->setTimezone(new DateTimeZone('Europe/Moscow'))) === 'KS-2611-0002');
+    $assert($ids->generate((new DateTimeImmutable('2026-10-31 22:00:00+00:00'))->setTimezone(new DateTimeZone('Europe/Moscow'))) === 'KS-2611-0002');
 });
 $test('System creation is idempotent and starts unowned ACTIVE with a display snapshot', static function () use ($assert,$systemRepo,$systemSequence,$systemSnapshots,$systemClock,$systemInput): void {
     $repo=$systemRepo(); $seq=$systemSequence(); $snapshots=$systemSnapshots(); $service=new SystemCreationService($repo,new SystemIdGenerator($seq),$snapshots,$systemClock);
