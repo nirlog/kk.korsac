@@ -1,4 +1,4 @@
-# `kk.korsac` v0.8
+# `kk.korsac` v0.9
 
 Серверный Bitrix D7-модуль простых справочников KORSAC options. Требования: PHP 8.2+, Bitrix D7 `highloadblock`, поддерживаемый MySQL/MariaDB и права на создание индексов/удаление пустой legacy schema при migration.
 
@@ -179,3 +179,43 @@ page. Canonical source is installed from `install/components` to
 not need a schema migration. Parameters, integration example and fixture #367
 acceptance are documented in
 [`KORSAC-PRODUCT-CONFIGURATOR-COMPONENT.md`](../../../docs/architecture/KORSAC-PRODUCT-CONFIGURATOR-COMPONENT.md).
+
+
+## Physical System core
+
+v0.9 adds `b_kk_korsac_system`, `b_kk_korsac_system_sequence` and
+`b_kk_korsac_system_component` in migration `2026_10_12_006_system_core`.
+Existing 0.8 installations run `tools/schema.php migrate`; `tools/schema.php check`
+now also verifies the System tables and indexes without weakening HL checks.
+Normal uninstall preserves all System/component/sequence business data.
+
+`SystemCreationService` explicitly creates one physical PC order unit with a
+server-generated immutable `KS-YYMM-NNNN` identifier, NULL owner and ACTIVE
+lifecycle. A three-column order-unit UNIQUE constraint makes creation idempotent.
+The monthly sequence uses its own D7 mysqli connection and an InnoDB locked-row
+transaction, with a strict 9999 ceiling and no number reuse. The System may
+reference the existing immutable configuration snapshot; actual installed
+components and their serial numbers/history are separate internal records.
+Child records use `SYSTEM_INTERNAL_ID` (`SystemComponent::$systemInternalId`) for
+numeric System.ID; `SYSTEM_ID` always denotes the human KS identifier. Ordinary
+System ORM updates allow only USER_ID, LIFECYCLE_STATE and UPDATED_AT, preserving
+all creation-time source fields. System-core identity/reference
+columns use signed INT and positive D7-compatible IDs `1..2147483647`; source
+IDs above that range are rejected before sequence allocation. The earlier live
+review build exposed unsigned/D7 coercion; the corrected schema must pass a
+live retest on the standalone test server before merge. An already-applied
+unsigned draft of migration 006 requires disposable test DB reset or an explicit
+data-preserving schema correction; migrate alone does not rewrite it.
+
+```bash
+php local/modules/kk.korsac/tests/Integration/system_core_smoke.php
+# Dedicated test Bitrix DB only: fixtures roll back; sequence numbers remain consumed.
+php local/modules/kk.korsac/tests/Integration/system_core_smoke.php --confirm-write --concurrency=4
+```
+
+The default smoke is read-only. Full contracts, migration, privacy, business
+timezone and manual validation are in
+[`KORSAC-SYSTEM-DOMAIN.md`](../../../docs/architecture/KORSAC-SYSTEM-DOMAIN.md).
+Passport, warranty, production statuses, Sale event automation, service workflow,
+ownership, inquiries and System Admin UI remain future stages. All persistence
+belongs to standalone KORSAC, with no King-Komp site/database integration.

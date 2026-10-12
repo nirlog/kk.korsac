@@ -9,6 +9,8 @@ use KK\Korsac\Install\OptionMigrationStore;
 use KK\Korsac\Install\SchemaMigrationService;
 use KK\Korsac\Install\BitrixSnapshotTableGateway;
 use KK\Korsac\Install\SnapshotMigrationService;
+use KK\Korsac\Install\SystemMigrationService;
+use KK\Korsac\Install\BitrixSystemTableGateway;
 
 class kk_korsac extends CModule
 {
@@ -52,6 +54,7 @@ class kk_korsac extends CModule
             $store = new OptionMigrationStore();
             (new SchemaMigrationService($store, $gateway))->migrate();
             (new SnapshotMigrationService($store, new BitrixSnapshotTableGateway()))->migrate();
+            (new SystemMigrationService($store, new BitrixSystemTableGateway()))->migrate();
             $this->InstallFiles();
         } catch (Throwable $exception) {
             if ($registeredHere) {
@@ -63,7 +66,7 @@ class kk_korsac extends CModule
 
     public function DoUninstall(): void
     {
-        // Deliberately retain HL blocks, rows and migration history.
+        // Retain HL data, snapshots, physical Systems/components, sequence state and migration history.
         $this->UnInstallFiles();
         UnRegisterModule($this->MODULE_ID);
     }
