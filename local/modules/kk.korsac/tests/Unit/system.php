@@ -78,7 +78,7 @@ $test('System ID namespaces follow the server creation month and timezone', stat
     $assert($ids->generate(new DateTimeImmutable('2026-10-31 23:59:59')) === 'KS-2610-0001');
     $assert($ids->generate(new DateTimeImmutable('2026-11-01 00:00:00')) === 'KS-2611-0001');
     $assert($ids->generate(new DateTimeImmutable('2026-10-31 23:59:59')) === 'KS-2610-0002');
-    $assert($ids->generate(new DateTimeImmutable('2026-10-31 22:00:00+00:00')->setTimezone(new DateTimeZone('Europe/Moscow'))) === 'KS-2611-0002');
+    $assert($ids->generate((new DateTimeImmutable('2026-10-31 22:00:00+00:00'))->setTimezone(new DateTimeZone('Europe/Moscow'))) === 'KS-2611-0002');
 });
 $test('System creation is idempotent and starts unowned ACTIVE with a display snapshot', static function () use ($assert,$systemRepo,$systemSequence,$systemSnapshots,$systemClock,$systemInput): void {
     $repo=$systemRepo(); $seq=$systemSequence(); $snapshots=$systemSnapshots(); $service=new SystemCreationService($repo,new SystemIdGenerator($seq),$snapshots,$systemClock);
