@@ -1,4 +1,4 @@
-# `kk.korsac` v0.10
+# `kk.korsac` v0.11
 
 Серверный Bitrix D7-модуль простых справочников KORSAC options. Требования: PHP 8.2+, Bitrix D7 `highloadblock`, поддерживаемый MySQL/MariaDB и права на создание индексов/удаление пустой legacy schema при migration.
 
@@ -216,9 +216,10 @@ php local/modules/kk.korsac/tests/Integration/system_core_smoke.php --confirm-wr
 The default smoke is read-only. Full contracts, migration, privacy, business
 timezone and manual validation are in
 [`KORSAC-SYSTEM-DOMAIN.md`](../../../docs/architecture/KORSAC-SYSTEM-DOMAIN.md).
-Passport, warranty, service workflow, ownership, inquiries and System Admin UI
-remain future stages; Sale synchronization and production status/history are
-implemented in v0.10. All persistence
+Public Passport HTML, warranty duration/claims, service workflow, ownership,
+inquiries and System Admin UI remain future stages; Sale synchronization and
+production status/history are implemented in v0.10, Passport backend and
+handoff-based warranty start in v0.11. All persistence
 belongs to standalone KORSAC, with no King-Komp site/database integration.
 
 
@@ -259,5 +260,46 @@ Labels can be overridden with `system.php status-label set` without changing cod
 Event failures log only order ID/safe code and do not re-save or fail the saved
 Order. Details, operational commands and outstanding live Sale checks are in
 [`KORSAC-SYSTEM-SALE-AUTOMATION.md`](../../../docs/architecture/KORSAC-SYSTEM-SALE-AUTOMATION.md).
-Passport, warranty, ownership, service, public API, System Admin UI and frontend
+Passport backend and warranty start are added in v0.11 below. Public HTTP,
+warranty duration/claims, ownership, service, System Admin UI and final storefront
 remain future work. No King-Komp runtime integration is introduced.
+
+
+## System Passport Core v1
+
+v0.11 / migration `2026_10_13_008_system_passport_core` adds a separate
+`b_kk_korsac_system_passport` table; migrations 001..007 are unchanged.
+`schema.php migrate` prepares it, `schema.php check` adds Passport health without
+weakening previous checks, and normal uninstall preserves identities, secret
+digests, handoff and warranty-start history.
+
+Preparation locks the ACTIVE parent System and idempotently issues random 128-bit
+PUBLIC_ID and independent SECRET_CODE. Only SHA-256 SECRET_CODE_HASH is stored.
+**The explicit passport-prepare CLI output contains the raw secret once and is
+sensitive; do not put it in logs/chat/PR/URLs/QR.** Repeated prepare returns null
+secret with the same Passport. Physical handoff is a separate irreversible
+activation: TRANSFERRED_AT equals WARRANTY_STARTED_AT in v1, with no duration/end
+calculation and no production READY requirement/transition or owner assignment.
+
+```bash
+php local/modules/kk.korsac/tools/system.php passport-prepare --system=<TEST_SYSTEM>
+php local/modules/kk.korsac/tools/system.php passport-show --system=<TEST_SYSTEM>
+php local/modules/kk.korsac/tools/system.php passport-activate --system=<TEST_SYSTEM>
+php local/modules/kk.korsac/tools/system.php passport-public --public-id=<PUBLIC_ID>
+php local/modules/kk.korsac/tests/Integration/system_passport_smoke.php
+# Architecture-reviewed fresh dedicated test System only; persists Passport/activation.
+php local/modules/kk.korsac/tests/Integration/system_passport_smoke.php --system=<TEST_SYSTEM> --confirm-write
+```
+
+PREPARED/unknown/malformed public lookups return the same not-found result. Only
+ACTIVE resolves to the explicit DTO, with human SYSTEM_ID, model/type, dates and
+actual active component type/slot label/name. Numeric identities, Orders/Users,
+credentials/digests, snapshots, serials/internal slot keys and histories stay
+private. `/passport/{PUBLIC_ID}/` is a reserved future path, not an implemented
+HTTP page/controller. SECRET_CODE grants no ownership. Public HTML, QR images,
+ownership/reissue/service/Admin UI and warranty duration remain outside this PR.
+
+Full contracts, timestamp precision, collision handling, safe commands and
+required live gate: [`KORSAC-SYSTEM-PASSPORT.md`](../../../docs/architecture/KORSAC-SYSTEM-PASSPORT.md).
+Live Passport checks require the standalone Bitrix test server and human
+architecture review before writes/merge; pure tests do not close that gate.

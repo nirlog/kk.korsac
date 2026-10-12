@@ -336,9 +336,10 @@ and schema health support. No HL block is added or changed by this PR.
 
 v0.10 implements authoritative Sale synchronization and separate production
 status/history; see [KORSAC-SYSTEM-SALE-AUTOMATION.md](KORSAC-SYSTEM-SALE-AUTOMATION.md).
-System lifecycle remains separate. Planned separately: physical handoff/user
-assignment, ownership lifecycle, public Passport
-and privacy-safe DTOs, PUBLIC_ID/SECRET_CODE/QR, transfer and warranty, service
+System lifecycle remains separate. v0.11 adds independent Passport preparation,
+physical handoff and warranty-start/query core; see [KORSAC-SYSTEM-PASSPORT.md](KORSAC-SYSTEM-PASSPORT.md).
+Planned separately: User assignment, ownership lifecycle, public Passport HTML,
+QR delivery, warranty duration/claims, service
 repair/upgrade/data correction, inquiries and Bitrix Admin UI. Payment, delivery,
 inventory, suppliers and compatibility engines remain outside this core. No
 frontend change or external site integration is introduced.

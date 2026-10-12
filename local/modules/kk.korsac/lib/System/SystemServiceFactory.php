@@ -16,4 +16,7 @@ final class SystemServiceFactory
         return new OrderSystemSynchronizationService(self::configuration(),$systems,new SystemCreationService($systems,new SystemIdGenerator(new BitrixSystemSequenceAllocator()),$snapshots),$snapshots,self::production());
     }
     public static function automation(): SaleOrderAutomation { return new SaleOrderAutomation(self::configuration(),new BitrixOrderProjectionAdapter(),self::synchronizer(),new BitrixSaleSynchronizationLogger()); }
+    public static function passports(): PassportService { return new PassportService(new BitrixPassportRepository(),new SecurePassportCredentialGenerator()); }
+    public static function publicPassports(): PublicPassportService { return new PublicPassportService(new BitrixPassportRepository(),new BitrixSystemRepository(),new BitrixSystemComponentRepository()); }
+
 }
