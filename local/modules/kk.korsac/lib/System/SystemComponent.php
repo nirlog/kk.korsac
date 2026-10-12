@@ -8,12 +8,12 @@ use DateTimeImmutable;
 final readonly class SystemComponent
 {
     public function __construct(
-        public int $id, public int $systemId, public string $typeCode, public string $slotKey,
+        public int $id, public int $systemInternalId, public string $typeCode, public string $slotKey,
         public string $slotLabel, public string $name, public ?string $serialNumber,
         public DateTimeImmutable $installedAt, public ?DateTimeImmutable $removedAt,
         public DateTimeImmutable $createdAt, public DateTimeImmutable $updatedAt,
     ) {
-        if ($id < 0 || $systemId < 1 || $systemId > 4294967295) throw new SystemException('system_component_invalid');
+        if ($id < 0 || $systemInternalId < 1 || $systemInternalId > 4294967295) throw new SystemException('system_component_invalid');
         foreach ([[$typeCode,32], [$slotKey,64]] as [$value,$limit]) {
             if (strlen((string)$value) > $limit || !preg_match('/\A[A-Z][A-Z0-9_]*\z/D', (string)$value)) throw new SystemException('system_component_invalid');
         }

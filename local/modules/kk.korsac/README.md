@@ -196,6 +196,11 @@ The monthly sequence uses its own D7 mysqli connection and an InnoDB locked-row
 transaction, with a strict 9999 ceiling and no number reuse. The System may
 reference the existing immutable configuration snapshot; actual installed
 components and their serial numbers/history are separate internal records.
+Child records use `SYSTEM_INTERNAL_ID` (`SystemComponent::$systemInternalId`) for
+numeric System.ID; `SYSTEM_ID` always denotes the human KS identifier. Ordinary
+System ORM updates allow only USER_ID, LIFECYCLE_STATE and UPDATED_AT, preserving
+all creation-time source fields. Live Bitrix/MySQL validation remains required
+on the standalone test server before merge.
 
 ```bash
 php local/modules/kk.korsac/tests/Integration/system_core_smoke.php

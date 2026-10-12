@@ -61,6 +61,12 @@ silently reusing a period.
 `b_kk_korsac_system` uses an auto-increment unsigned integer `ID` as the internal
 primary key. `SYSTEM_ID` is the separate unique 12-character human identity.
 
+**Domain naming convention:** `SYSTEM_ID` always means the immutable human
+`KS-YYMM-NNNN` business identifier. Child records reference numeric System.ID
+through `SYSTEM_INTERNAL_ID` / `$systemInternalId`. Use this convention for
+future service, status, ownership and inquiry records; never name a numeric
+parent relation SYSTEM_ID.
+
 | Columns | Meaning |
 | --- | --- |
 | SITE_ID | Required installation site, at most 10 UTF-8 characters |
@@ -143,8 +149,14 @@ owner or lifecycle and without consuming another number. Supplied snapshot
 relations are checked only for new creation; existing history is never rebuilt
 from current Product properties. Persistence has a narrow repository boundary:
 create, findById, findBySystemId and findByOrderUnit. There is no normal identifier
-update operation; ordinary SystemTable ORM updates also reject identifier/source
-changes.
+update operation. Ordinary `SystemTable::update()` accepts only USER_ID,
+LIFECYCLE_STATE and UPDATED_AT; it rejects every other field, even when supplied
+with NULL or an unchanged value. The protected creation snapshot includes
+SYSTEM_ID, SITE_ID, SYSTEM_TYPE, MODEL_NAME, IBLOCK_ID, PRODUCT_ID, ORDER_ID,
+ORDER_BASKET_ID, ORDER_UNIT_INDEX, CONFIG_SNAPSHOT_KEY and CREATED_AT, as well as
+the internal ID. Mixed source/mutable updates fail before delegation to ORM.
+No generic source-update API is provided. Any exceptional correction belongs to
+a future audited Data Correction operation.
 
 Safe machine errors include `system_source_invalid`, `system_type_invalid`,
 `system_snapshot_not_found`, `system_snapshot_mismatch`,
@@ -160,7 +172,7 @@ controller yet.
 | Columns | Meaning |
 | --- | --- |
 | ID | Internal unsigned auto-increment primary key |
-| SYSTEM_ID | Internal numeric System.ID, not the human KS identifier |
+| SYSTEM_INTERNAL_ID | Internal numeric parent System.ID |
 | TYPE_CODE | Component category, bounded uppercase code (e.g. GPU, SSD, RAM) |
 | SLOT_KEY | Stable physical position (GPU, SSD_1, SSD_2, RAM_1, etc.) |
 | SLOT_LABEL | Historical display label such as «Видеокарта» or «SSD 2» |
@@ -170,7 +182,8 @@ controller yet.
 | REMOVED_AT | NULL for active installation, non-NULL for removed history |
 | CREATED_AT, UPDATED_AT | Record timestamps |
 
-Indexes cover SYSTEM_ID, (SYSTEM_ID,SLOT_KEY) and (SYSTEM_ID,REMOVED_AT). Multiple
+Indexes cover SYSTEM_INTERNAL_ID, (SYSTEM_INTERNAL_ID,SLOT_KEY) and
+(SYSTEM_INTERNAL_ID,REMOVED_AT). Multiple
 SSD/RAM/etc. positions are supported. A slot index is deliberately nonunique to
 retain replacement history. The future replacement service must close the old
 row and insert a new one, never overwrite the old component name. Enforcing one
@@ -178,7 +191,9 @@ active component per slot belongs to that future transactional service.
 
 `BitrixSystemComponentRepository` checks the parent System, inserts a physical
 record and reads either all history or only REMOVED_AT IS NULL. It provides no
-repair/replacement/delete operation. Same-module relationships are enforced by
+repair/replacement/delete operation. The numeric domain relation is
+`SystemComponent::$systemInternalId`; repository lookups also accept the internal
+System.ID. Same-module relationships are enforced by
 the application without physical foreign keys.
 
 Serial numbers are private internal/service data. Future public Passport DTOs
@@ -224,7 +239,24 @@ The check does not repair records or validate live Order/User existence.
 Ordinary uninstall preserves Systems, components, sequence state, snapshots,
 HL data and migration history. Physical history is business data.
 
-## Validation
+## Validation and live deployment gate
+
+Live Bitrix/MySQL validation has not been run in this cloud checkout, which has
+no initialized Bitrix installation or test database. Before merge, run all four
+commands on the standalone KORSAC test server and record their actual results:
+
+```bash
+php local/modules/kk.korsac/tools/schema.php migrate
+php local/modules/kk.korsac/tools/schema.php check
+php local/modules/kk.korsac/tests/Integration/system_core_smoke.php
+php local/modules/kk.korsac/tests/Integration/system_core_smoke.php --confirm-write --concurrency=4
+```
+
+The pre-merge revision of migration 006 uses SYSTEM_INTERNAL_ID in components.
+If an earlier review build was already installed with a numeric SYSTEM_ID
+column, it is incompatible: health checks must fail rather than certify it. Use
+an explicitly reviewed data-preserving schema correction for that test database;
+normal migration never drops/rebuilds physical history or silently renames it.
 
 ```bash
 php local/modules/kk.korsac/tests/Unit/run.php
@@ -258,7 +290,8 @@ is covered by a deterministic race fake and DB-level unique-schema checks.
 Pure tests cover ID formatting/limits/month/timezone, source/domain validation,
 idempotency/race recovery/gaps, snapshot compatibility, forbidden overrides,
 component history, safe persistence failures, fresh/idempotent migration,
-upgrade history and incompatible schema/index detection. Live Bitrix/MySQL smoke
+upgrade history, component parent-reference naming, every immutable ORM field,
+mutable-field delegation and incompatible schema/index detection. Live Bitrix/MySQL smoke
 must still be run in the deployment test installation; pure tests alone do not
 prove database locking or deployed ORM compatibility.
 

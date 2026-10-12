@@ -10,10 +10,13 @@ final class SystemTable extends DataManager
     public static function getTableName(): string { return SystemSchemaDefinition::SYSTEM; }
     public static function getMap(): array { return SystemSchemaDefinition::ormMap(self::getTableName()); }
 
-    /** Identifier/source immutability also applies to ordinary ORM updates. */
+    // Every other column is immutable through ordinary ORM updates, including future source fields.
+    private const MUTABLE_FIELDS = ['USER_ID', 'LIFECYCLE_STATE', 'UPDATED_AT'];
+
+    /** Preserve the full historical creation identity/source snapshot. */
     public static function update($primary, array $data)
     {
-        if (array_intersect(array_keys($data), ['SYSTEM_ID','ORDER_ID','ORDER_BASKET_ID','ORDER_UNIT_INDEX'])) throw new SystemException('system_source_immutable');
+        if (array_diff(array_keys($data), self::MUTABLE_FIELDS)) throw new SystemException('system_source_immutable');
         return parent::update($primary, $data);
     }
 }

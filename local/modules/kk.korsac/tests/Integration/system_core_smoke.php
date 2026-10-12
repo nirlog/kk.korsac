@@ -75,9 +75,13 @@ try {
     $system = $service->create($input);
     if ($system->userId !== null || $system->lifecycleState !== 'ACTIVE' || $systems->findById($system->id)?->systemId !== $system->systemId || $systems->findBySystemId($system->systemId)?->id !== $system->id || $service->create($input)->id !== $system->id) throw new SystemException('system_smoke_creation_failed');
     $now = new DateTimeImmutable('now'); $components = new BitrixSystemComponentRepository();
-    $components->create(new SystemComponent(0,$system->id,'SSD','SSD_1','SSD 1','Synthetic disk',null,$now,null,$now,$now));
-    $components->create(new SystemComponent(0,$system->id,'SSD','SSD_2','SSD 2','Removed synthetic disk',null,$now,$now,$now,$now));
-    if (count($components->findForSystem($system->id)) !== 2 || count($components->findForSystem($system->id,true)) !== 1) throw new SystemException('system_smoke_component_failed');
+    $active = $components->create(new SystemComponent(0,$system->id,'SSD','SSD_1','SSD 1','Synthetic disk',null,$now,null,$now,$now));
+    $removed = $components->create(new SystemComponent(0,$system->id,'SSD','SSD_2','SSD 2','Removed synthetic disk',null,$now,$now,$now,$now));
+    $history = $components->findForSystem($system->id);
+    if ($active->systemInternalId !== $system->id || $removed->systemInternalId !== $system->id || count($history) !== 2 || count($components->findForSystem($system->id,true)) !== 1) throw new SystemException('system_smoke_component_failed');
+    foreach ($history as $component) {
+        if ($component->systemInternalId !== $system->id) throw new SystemException('system_smoke_component_failed');
+    }
     $connection->rollbackTransaction(); $transaction = false;
     if ($systems->findBySystemId($system->systemId) !== null || $components->findForSystem($system->id) !== []) throw new SystemException('system_smoke_rollback_failed');
     $period = substr($system->systemId,3,4);

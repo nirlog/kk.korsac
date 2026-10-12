@@ -7,5 +7,5 @@ interface SystemComponentRepositoryInterface
 {
     public function create(SystemComponent $component): SystemComponent;
     /** @return list<SystemComponent> Includes history unless activeOnly is explicitly requested. */
-    public function findForSystem(int $systemId, bool $activeOnly = false): array;
+    public function findForSystem(int $systemInternalId, bool $activeOnly = false): array;
 }

@@ -39,14 +39,14 @@ final class SystemSchemaDefinition
             ],
             self::COMPONENT => [
                 'columns'=>[
-                    'ID'=>$id, 'SYSTEM_ID'=>$integer, 'TYPE_CODE'=>$string(32), 'SLOT_KEY'=>$string(64), 'SLOT_LABEL'=>$string(255),
+                    'ID'=>$id, 'SYSTEM_INTERNAL_ID'=>$integer, 'TYPE_CODE'=>$string(32), 'SLOT_KEY'=>$string(64), 'SLOT_LABEL'=>$string(255),
                     'NAME'=>$string(255), 'SERIAL_NUMBER'=>$string(255,true), 'INSTALLED_AT'=>$date,
                     'REMOVED_AT'=>array_replace($date,['nullable'=>true]), 'CREATED_AT'=>$date, 'UPDATED_AT'=>$date,
                 ],
                 'indexes'=>[
-                    'PRIMARY'=>$index(['ID'],true), 'ix_kk_korsac_component_system'=>$index(['SYSTEM_ID']),
-                    'ix_kk_korsac_component_slot'=>$index(['SYSTEM_ID','SLOT_KEY']),
-                    'ix_kk_korsac_component_active'=>$index(['SYSTEM_ID','REMOVED_AT']),
+                    'PRIMARY'=>$index(['ID'],true), 'ix_kk_korsac_component_system'=>$index(['SYSTEM_INTERNAL_ID']),
+                    'ix_kk_korsac_component_slot'=>$index(['SYSTEM_INTERNAL_ID','SLOT_KEY']),
+                    'ix_kk_korsac_component_active'=>$index(['SYSTEM_INTERNAL_ID','REMOVED_AT']),
                 ],
             ],
         ];

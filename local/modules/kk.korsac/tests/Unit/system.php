@@ -127,6 +127,7 @@ $test('System component records distinguish physical slots and retain removed hi
     $now=$systemClock(); $old=new SystemComponent(1,10,'SSD','SSD_1','SSD 1','Old disk','private-SN',$now,$now->modify('+1 day'),$now,$now);
     $new=new SystemComponent(2,10,'SSD','SSD_1','SSD 1','New disk',null,$now->modify('+1 day'),null,$now,$now);
     $second=new SystemComponent(3,10,'SSD','SSD_2','SSD 2','Second disk',null,$now,null,$now,$now);
+    $assert($old->systemInternalId === 10 && $new->systemInternalId === 10 && $second->systemInternalId === 10);
     $assert($old->removedAt !== null && $new->removedAt === null && $second->slotKey !== $new->slotKey && $old->serialNumber === 'private-SN');
     $systemError(static fn()=>new SystemComponent(0,0,'SSD','SSD_1','SSD','Disk',null,$now,null,$now,$now),'system_component_invalid');
     $systemError(static fn()=>new SystemComponent(0,1,'SSD','SSD_1','SSD','Disk',null,$now,$now->modify('-1 day'),$now,$now),'system_component_invalid');
@@ -203,4 +204,46 @@ $test('System SQL allocator validates periods before connecting and sanitizes dr
     $assert($connection->events === []);
     $connection->fail=true; $systemError(static fn()=>$allocator->allocate('2610'),'system_sequence_failed');
     $assert($connection->events === ['begin','rollback','disconnect']);
+});
+
+// Keep the expected domain contract explicit, independently of the production allowlist.
+foreach (['ID','SYSTEM_ID','SITE_ID','SYSTEM_TYPE','MODEL_NAME','IBLOCK_ID','PRODUCT_ID','ORDER_ID','ORDER_BASKET_ID','ORDER_UNIT_INDEX','CONFIG_SNAPSHOT_KEY','CREATED_AT'] as $immutableField) {
+    $test('System ORM update rejects immutable '.$immutableField, static function () use ($assert,$systemError,$immutableField): void {
+        require_once __DIR__ . '/fixtures/system_table_parent.php';
+        \Bitrix\Main\Entity\DataManager::$updates = [];
+        foreach ([null, 'replacement'] as $value) {
+            $systemError(static fn()=>\KK\Korsac\System\SystemTable::update(1, [$immutableField=>$value]), 'system_source_immutable');
+            $systemError(static fn()=>\KK\Korsac\System\SystemTable::update(1, ['USER_ID'=>7, $immutableField=>$value]), 'system_source_immutable');
+        }
+        $assert(\Bitrix\Main\Entity\DataManager::$updates === [], 'Immutable source update reached ORM');
+    });
+}
+$test('System ORM update delegates only intended mutable fields unchanged', static function () use ($assert): void {
+    require_once __DIR__ . '/fixtures/system_table_parent.php';
+    \Bitrix\Main\Entity\DataManager::$updates = [];
+    $now = new DateTimeImmutable('2026-10-12 10:00:00');
+    foreach ([['USER_ID'=>null], ['USER_ID'=>7], ['LIFECYCLE_STATE'=>'CANCELLED'], ['UPDATED_AT'=>$now], ['USER_ID'=>7,'LIFECYCLE_STATE'=>'ACTIVE','UPDATED_AT'=>$now]] as $data) {
+        $assert(\KK\Korsac\System\SystemTable::update(1, $data) === ['delegated'=>true]);
+        $assert(end(\Bitrix\Main\Entity\DataManager::$updates) === ['primary'=>1,'data'=>$data]);
+    }
+});
+$test('System component schema reserves SYSTEM_ID for the human business identity', static function () use ($assert,$systemGateway): void {
+    $tables = SystemSchemaDefinition::tables();
+    $component = $tables[SystemSchemaDefinition::COMPONENT];
+    $assert(!isset($component['columns']['SYSTEM_ID']));
+    $assert($component['columns']['SYSTEM_INTERNAL_ID']['type'] === 'int unsigned' && !$component['columns']['SYSTEM_INTERNAL_ID']['nullable']);
+    foreach (['ix_kk_korsac_component_system'=>['SYSTEM_INTERNAL_ID'], 'ix_kk_korsac_component_slot'=>['SYSTEM_INTERNAL_ID','SLOT_KEY'], 'ix_kk_korsac_component_active'=>['SYSTEM_INTERNAL_ID','REMOVED_AT']] as $name=>$columns) {
+        $assert($component['indexes'][$name]['columns'] === $columns);
+    }
+    $assert($tables[SystemSchemaDefinition::SYSTEM]['columns']['SYSTEM_ID']['type'] === 'varchar(12)');
+    $sql = SystemSchemaDefinition::createSql(SystemSchemaDefinition::COMPONENT);
+    $assert(str_contains($sql, '`SYSTEM_INTERNAL_ID` INT UNSIGNED NOT NULL') && !str_contains($sql, '`SYSTEM_ID`'));
+    $gateway=$systemGateway(); (new SystemCore($gateway))->up();
+    $description=&$gateway->tables[SystemSchemaDefinition::COMPONENT];
+    $description['columns']['SYSTEM_ID']=$description['columns']['SYSTEM_INTERNAL_ID'];
+    unset($description['columns']['SYSTEM_INTERNAL_ID']);
+    $description['indexes']['ix_kk_korsac_component_system']['columns']=['SYSTEM_ID'];
+    $errors=(new SystemSchemaSelfCheck($gateway))->run()['errors'];
+    $assert(in_array(['code'=>'system_column_missing','table'=>SystemSchemaDefinition::COMPONENT,'field'=>'SYSTEM_INTERNAL_ID'],$errors,true));
+    $assert(in_array(['code'=>'system_index_mismatch','table'=>SystemSchemaDefinition::COMPONENT,'index'=>'ix_kk_korsac_component_system'],$errors,true));
 });
