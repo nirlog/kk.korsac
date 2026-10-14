@@ -22,6 +22,7 @@ $passportFixture=static function() use ($passportHex):array {
         public array $parents=[], $records=[], $events=[];
         public int $reads=0,$creates=0,$activations=0,$forcedCollisions=0;
         public bool $failCreate=false,$failActivate=false,$failCommit=false;
+        public ?Throwable $readFailure=null;
         public ?PassportRecord $raceWinner=null;
         public function __construct(DateTimeImmutable $origin){$this->parents[1]=new PassportSystemState(1,'ACTIVE',$origin);}
         public function transaction(Closure $op):mixed {
@@ -32,7 +33,7 @@ $passportFixture=static function() use ($passportHex):array {
         public function lockSystem(int $id):PassportSystemState{$this->events[]='lock-system';if(!isset($this->parents[$id]))throw new SystemException('system_not_found');return $this->parents[$id];}
         public function lockBySystem(int $id):?PassportRecord{$this->events[]='lock-passport';if($this->raceWinner!==null){$this->records[$id]=$this->raceWinner;$this->raceWinner=null;}return $this->records[$id] ?? null;}
         public function findBySystem(int $id):?PassportRecord{++$this->reads;return $this->records[$id] ?? null;}
-        public function findByPublicId(string $pub):?PassportRecord{++$this->reads;foreach($this->records as $r)if($r->publicId===$pub)return $r;return null;}
+        public function findByPublicId(string $pub):?PassportRecord{++$this->reads;if($this->readFailure!==null)throw $this->readFailure;foreach($this->records as $r)if($r->publicId===$pub)return $r;return null;}
         public function create(PassportRecord $r):PassportRecord{
             ++$this->creates;$this->events[]='create';if($this->failCreate)throw new RuntimeException('SQL secret /private/path');
             if($this->forcedCollisions>0){--$this->forcedCollisions;throw new PassportCredentialCollision();}
@@ -142,6 +143,74 @@ $test('Passport public malformed unknown and prepared lookups have identical gen
     $public=new \KK\Korsac\System\PublicPassportService($f['repo'],$systemRepo(),$components);
     foreach(['bad',$passportHex(9999),$prepared->passport->publicId] as $id)$systemError(static fn()=>$public->find($id),'system_passport_not_found');
 });
+
+$publicPassportFixture=static function() use ($passportFixture):array {
+    $f=$passportFixture();
+    $f['preparation']=$f['service']->preparePassport(1);
+    $f['active']=$f['service']->activatePassport(1);
+    $source=\KK\Korsac\System\SystemCreationRequest::fromArray(['SITE_ID'=>'s1','ORDER_ID'=>10,'ORDER_BASKET_ID'=>20,'ORDER_UNIT_INDEX'=>1,'SYSTEM_TYPE'=>'MODEL','MODEL_NAME'=>'KORSAC PLAY 1440']);
+    $system=new \KK\Korsac\System\SystemRecord(1,'KS-2610-0007',$source,null,'ACTIVE',$f['origin'],$f['origin']);
+    $f['systems']=new class($system) implements \KK\Korsac\System\SystemRepositoryInterface {
+        public ?Throwable $readFailure=null;
+        public function __construct(public ?\KK\Korsac\System\SystemRecord $record) {}
+        public function findById(int $id):?\KK\Korsac\System\SystemRecord { if ($this->readFailure!==null) throw $this->readFailure; return $this->record; }
+        public function create(\KK\Korsac\System\SystemRecord $system):\KK\Korsac\System\SystemRecord { throw new RuntimeException('Unexpected write'); }
+        public function findBySystemId(string $systemId):?\KK\Korsac\System\SystemRecord { throw new RuntimeException('Unexpected lookup'); }
+        public function findByOrderUnit(int $orderId,int $basketId,int $unitIndex,bool $currentRead=false):?\KK\Korsac\System\SystemRecord { throw new RuntimeException('Unexpected lookup'); }
+        public function findByOrder(int $orderId):array { throw new RuntimeException('Unexpected lookup'); }
+        public function findByOrderBasket(int $orderId,int $basketId):array { throw new RuntimeException('Unexpected lookup'); }
+    };
+    $f['components']=new class implements \KK\Korsac\System\SystemComponentRepositoryInterface {
+        public ?Throwable $readFailure=null;
+        public bool $activeRequested=false;
+        public function create(\KK\Korsac\System\SystemComponent $component):\KK\Korsac\System\SystemComponent { throw new RuntimeException('Unexpected write'); }
+        public function findForSystem(int $id,bool $activeOnly=false):array { $this->activeRequested=$activeOnly; if ($this->readFailure!==null) throw $this->readFailure; return []; }
+    };
+    $f['public']=new \KK\Korsac\System\PublicPassportService($f['repo'],$f['systems'],$f['components']);
+    return $f;
+};
+$publicReadError=static function(callable $action) use ($assert):void {
+    try { $action(); }
+    catch (SystemException $error) {
+        $assert($error->machineCode==='system_passport_read_failed');
+        $assert($error->getMessage()==='system_passport_read_failed');
+        $assert($error->diagnostic()===['code'=>'system_passport_read_failed']);
+        $assert($error->getPrevious()===null);
+        return;
+    }
+    throw new RuntimeException('Expected sanitized public Passport read failure');
+};
+foreach (['repo'=>'Passport','systems'=>'System','components'=>'active component'] as $layer=>$label) {
+    $test('Passport public normalizes '.$label.' repository failures without private diagnostics',static function() use ($assert,$publicPassportFixture,$publicReadError,$layer):void {
+        $f=$publicPassportFixture();
+        $private='SELECT * FROM customer WHERE ORDER_ID=442241 /private/credentials PRIVATE_SERIAL '.$f['preparation']->secretCode.' '.$f['active']->secretCodeHash;
+        $context=['table'=>'private_customer','field'=>$private,'index'=>'private_read'];
+        foreach ([new RuntimeException($private),new SystemException('underlying_read_failed',$context),new SystemException('system_passport_not_found',$context)] as $failure) {
+            $f[$layer]->readFailure=$failure;
+            $publicReadError(static fn()=>$f['public']->find($f['active']->publicId));
+        }
+        if ($layer==='components') $assert($f['components']->activeRequested);
+    });
+}
+$test('Passport public corrupt persisted state is a read failure rather than not-found',static function() use ($publicPassportFixture,$publicReadError):void {
+    $f=$publicPassportFixture(); $valid=$f['active'];
+    foreach ([
+        new PassportRecord(1,$valid->publicId,$valid->secretCodeHash,'EXPIRED',null,null,$valid->preparedAt,$valid->updatedAt),
+        new PassportRecord(1,$valid->publicId,$valid->secretCodeHash,'ACTIVE',null,null,$valid->preparedAt,$valid->updatedAt),
+        new PassportRecord(1,$valid->publicId,$valid->secretCodeHash,'ACTIVE',$valid->transferredAt,$valid->transferredAt->modify('+1 second'),$valid->preparedAt,$valid->updatedAt),
+        new PassportRecord(1,$valid->publicId,'invalid hash','ACTIVE',$valid->transferredAt,$valid->warrantyStartedAt,$valid->preparedAt,$valid->updatedAt),
+        new PassportRecord(0,$valid->publicId,$valid->secretCodeHash,'ACTIVE',$valid->transferredAt,$valid->warrantyStartedAt,$valid->preparedAt,$valid->updatedAt),
+        new PassportRecord(1,$valid->publicId,$valid->secretCodeHash,'PREPARED',$valid->transferredAt,$valid->warrantyStartedAt,$valid->preparedAt,$valid->updatedAt),
+    ] as $corrupt) {
+        $f['repo']->records[1]=$corrupt;
+        $publicReadError(static fn()=>$f['public']->find($valid->publicId));
+    }
+});
+$test('Passport public missing parent System is a data read failure rather than not-found',static function() use ($publicPassportFixture,$publicReadError):void {
+    $f=$publicPassportFixture(); $f['systems']->record=null;
+    $publicReadError(static fn()=>$f['public']->find($f['active']->publicId));
+});
+
 $test('Passport active DTO allowlists values and excludes private System and component history data',static function()use($assert,$passportFixture,$systemRepo):void{
     $f=$passportFixture();$systems=$systemRepo();$id=330031;$request=\KK\Korsac\System\SystemCreationRequest::fromArray(['SITE_ID'=>'s1','ORDER_ID'=>442241,'ORDER_BASKET_ID'=>552251,'ORDER_UNIT_INDEX'=>9,'SYSTEM_TYPE'=>'MODEL','MODEL_NAME'=>'KORSAC PLAY 1440','IBLOCK_ID'=>662261,'PRODUCT_ID'=>772271,'CONFIG_SNAPSHOT_KEY'=>str_repeat('e',64)]);
     $systems->items[]=new \KK\Korsac\System\SystemRecord($id,'KS-2610-0007',$request,882281,'ACTIVE',$f['origin'],$f['origin']);$f['repo']->parents[$id]=new PassportSystemState($id,'ACTIVE',$f['origin']);$p=$f['service']->preparePassport($id);$f['service']->activatePassport($id);

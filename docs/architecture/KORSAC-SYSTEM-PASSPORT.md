@@ -151,9 +151,12 @@ invalid/calendar-overflow dates and does not accept relative expressions such as
 ## Explicit public DTO and visibility
 
 `PublicPassportService::find($publicId)` returns a dedicated PublicPassportDto.
-Malformed/unknown IDs, PREPARED passports and non-resolvable/corrupt data all have
-the same public code `system_passport_not_found`. Only valid ACTIVE Passports
-resolve. It never serializes PassportRecord, SystemRecord or SystemComponent.
+Malformed/unknown IDs and valid PREPARED passports have the same public code
+`system_passport_not_found`. Repository read failures, missing parent Systems and
+invalid/corrupt persisted Passport data instead produce `system_passport_read_failed`.
+The public projection never propagates underlying machine/driver errors or private
+diagnostics. Only valid ACTIVE Passports resolve. It never serializes PassportRecord,
+SystemRecord or SystemComponent.
 
 The exact public field allowlist is:
 
@@ -244,7 +247,9 @@ system_passport_token_collision, system_passport_persist_failed,
 system_passport_read_failed, system_passport_transfer_time_invalid and
 system_passport_activation_conflict. Ordinary ORM mutation fails
 system_passport_immutable; malformed internal numeric source uses existing
-system_source_invalid. Public lookup remains uniformly not-found.
+system_source_invalid. Public lookup keeps the three intended not-found cases
+indistinguishable while normalizing operational/data failures to
+system_passport_read_failed without diagnostic context or chained exceptions.
 
 ## Tests and required live gate
 
