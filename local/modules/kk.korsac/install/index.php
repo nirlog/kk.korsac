@@ -14,6 +14,8 @@ use KK\Korsac\Install\BitrixSystemTableGateway;
 use KK\Korsac\Install\ProductionStatusMigrationService;
 use KK\Korsac\Install\BitrixProductionStatusTableGateway;
 use KK\Korsac\System\SystemServiceFactory;
+use KK\Korsac\Install\PassportMigrationService;
+use KK\Korsac\Install\BitrixPassportTableGateway;
 
 class kk_korsac extends CModule
 {
@@ -21,7 +23,7 @@ class kk_korsac extends CModule
     public $MODULE_VERSION;
     public $MODULE_VERSION_DATE;
     public $MODULE_NAME = 'KORSAC domain data';
-    public $MODULE_DESCRIPTION = 'KORSAC configuration, physical Systems, production workflow and Sale integration.';
+    public $MODULE_DESCRIPTION = 'KORSAC configuration, physical Systems, Passport lifecycle, production workflow and Sale integration.';
     public $PARTNER_NAME = 'KORSAC';
     public $PARTNER_URI = '';
 
@@ -59,6 +61,7 @@ class kk_korsac extends CModule
             (new SnapshotMigrationService($store, new BitrixSnapshotTableGateway()))->migrate();
             (new SystemMigrationService($store, new BitrixSystemTableGateway()))->migrate();
             (new ProductionStatusMigrationService($store,new BitrixProductionStatusTableGateway(),SystemServiceFactory::registration()))->migrate();
+            (new PassportMigrationService($store,new BitrixPassportTableGateway()))->migrate();
             $this->InstallFiles();
         } catch (Throwable $exception) {
             if ($registeredHere) {
@@ -70,7 +73,7 @@ class kk_korsac extends CModule
 
     public function DoUninstall(): void
     {
-        // Retain HL data, snapshots, physical Systems/components, sequence state, production status/history and migration history.
+        // Retain HL data, snapshots, physical Systems/components, sequence state, production status/history, Passports/credential hashes/handoff/warranty starts and migration history.
         Loader::registerNamespace('KK\\Korsac', dirname(__DIR__) . '/lib');
         SystemServiceFactory::registration()->remove();
         $this->UnInstallFiles();

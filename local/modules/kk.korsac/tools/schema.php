@@ -19,6 +19,9 @@ use KK\Korsac\Install\SqlTableInspector;
 use KK\Korsac\Health\ProductionStatusSchemaSelfCheck;
 use KK\Korsac\Health\SnapshotSchemaSelfCheck;
 use KK\Korsac\System\SystemServiceFactory;
+use KK\Korsac\Install\PassportMigrationService;
+use KK\Korsac\Install\BitrixPassportTableGateway;
+use KK\Korsac\Health\PassportSchemaSelfCheck;
 
 $documentRoot = ($_SERVER['DOCUMENT_ROOT'] ?? '') ?: dirname(__DIR__, 4);
 $_SERVER['DOCUMENT_ROOT'] = $documentRoot;
@@ -36,6 +39,7 @@ if ($command === 'migrate') {
             (new SnapshotMigrationService($store, new BitrixSnapshotTableGateway()))->migrate(),
             (new SystemMigrationService($store, new BitrixSystemTableGateway()))->migrate(),
             (new ProductionStatusMigrationService($store,new BitrixProductionStatusTableGateway(),SystemServiceFactory::registration()))->migrate(),
+            (new PassportMigrationService($store,new BitrixPassportTableGateway()))->migrate(),
         );
     } catch (SystemException $error) {
         fwrite(STDERR, json_encode(['ok'=>false, 'error'=>$error->diagnostic()]) . PHP_EOL);
@@ -50,7 +54,7 @@ $systems = (new SystemSchemaSelfCheck(new BitrixSystemTableGateway()))->run();
 $result['systems'] = $systems;
 $result['ok'] = $result['ok'] && $systems['ok'];
 $result['errors'] = array_merge($result['errors'], $systems['errors']);
-foreach (['snapshots'=>(new SnapshotSchemaSelfCheck(static fn(string $table):?array=>(new SqlTableInspector())->describe($table)))->run(), 'production'=>(new ProductionStatusSchemaSelfCheck(new BitrixProductionStatusTableGateway()))->run(), 'saleHandler'=>SystemServiceFactory::registration()->check()] as $name=>$check) {
+foreach (['snapshots'=>(new SnapshotSchemaSelfCheck(static fn(string $table):?array=>(new SqlTableInspector())->describe($table)))->run(), 'production'=>(new ProductionStatusSchemaSelfCheck(new BitrixProductionStatusTableGateway()))->run(), 'saleHandler'=>SystemServiceFactory::registration()->check(), 'passports'=>(new PassportSchemaSelfCheck(new BitrixPassportTableGateway()))->run()] as $name=>$check) {
     $result[$name]=$check; $result['ok']=$result['ok'] && $check['ok']; $result['errors']=array_merge($result['errors'],$check['errors']);
 }
 echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), PHP_EOL;

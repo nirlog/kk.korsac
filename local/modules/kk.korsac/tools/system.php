@@ -17,21 +17,38 @@ $_SERVER['DOCUMENT_ROOT']=$documentRoot;
 if (!is_file($documentRoot.'/bitrix/modules/main/include/prolog_before.php')) { fwrite(STDERR,"{\"ok\":false,\"code\":\"bitrix_environment_required\"}\n"); exit(2); }
 require $documentRoot.'/bitrix/modules/main/include/prolog_before.php';
 try {
-    if (!Loader::includeModule('kk.korsac') || !Loader::includeModule('sale')) throw new SystemException('system_sale_required');
-    $command=$argv[1] ?? ''; $action=$argv[2] ?? ''; $options=[];
+    $command=$argv[1] ?? '';
+    $passportCommand=in_array($command,['passport-prepare','passport-show','passport-activate','passport-public'],true);
+    if (!Loader::includeModule('kk.korsac') || (!$passportCommand && !Loader::includeModule('sale'))) throw new SystemException('system_sale_required'); $action=$argv[2] ?? ''; $options=[];
     foreach (array_slice($argv,$command==='sale-config' || $command==='status-labels' || $command==='status-label' ? 3 : 2) as $argument) {
         if (!preg_match('/\A--([a-z-]+)=(.*)\z/D',$argument,$match) || isset($options[$match[1]])) throw new SystemException('system_cli_arguments_invalid');
         $options[$match[1]]=$match[2];
     }
     $allowed=match ($command) {
         'sale-config'=>$action==='set' ? ['status'] : [], 'inspect-order','sync-order'=>['order'],
+        'passport-prepare','passport-show'=>['system'], 'passport-activate'=>['system','transferred-at'], 'passport-public'=>['public-id'],
         'status-set'=>['system','status'], 'status-show'=>['system'], 'status-label'=>['status','label'], 'status-labels'=>[],
         default=>throw new SystemException('system_cli_arguments_invalid'),
     };
     if (array_diff(array_keys($options),$allowed)) throw new SystemException('system_cli_arguments_invalid');
     $required=static function(string $key) use ($options):string { if (!isset($options[$key]) || $options[$key]==='') throw new SystemException('system_cli_arguments_invalid'); return $options[$key]; };
     $configuration=SystemServiceFactory::configuration();
-    if ($command==='sale-config') {
+    if ($command==='passport-public') {
+        $result=SystemServiceFactory::publicPassports()->find($required('public-id'))->toArray();
+    } elseif (in_array($command,['passport-prepare','passport-show','passport-activate'],true)) {
+        $humanId=$required('system');
+        if (!preg_match('/\AKS-[0-9]{2}(?:0[1-9]|1[0-2])-[0-9]{4}\z/D',$humanId)) throw new SystemException('system_source_invalid');
+        $system=(new BitrixSystemRepository())->findBySystemId($humanId);
+        if ($system===null) throw new SystemException('system_not_found');
+        if ($command==='passport-prepare') {
+            $preparation=SystemServiceFactory::passports()->preparePassport($system->id);
+            // The explicit credential-issuing command is the only CLI path allowed to return this once.
+            $result=['created'=>$preparation->created,'systemId'=>$humanId,'publicId'=>$preparation->passport->publicId,'state'=>$preparation->passport->state,'secretCode'=>$preparation->secretCode];
+        } elseif ($command==='passport-activate') {
+            $transfer=isset($options['transferred-at']) ? \KK\Korsac\System\PassportTimestamp::fromIso8601($options['transferred-at']) : null;
+            $result=\KK\Korsac\System\PassportInternalView::of($humanId,SystemServiceFactory::passports()->activatePassport($system->id,$transfer));
+        } else $result=\KK\Korsac\System\PassportInternalView::of($humanId,(new \KK\Korsac\System\BitrixPassportRepository())->findBySystem($system->id));
+    } elseif ($command==='sale-config') {
         $settings=match ($action) { 'show'=>$configuration->read(), 'set'=>$configuration->configure($required('status')), 'disable'=>$configuration->disable(), default=>throw new SystemException('system_cli_arguments_invalid') };
         $result=['enabled'=>$settings->enabled,'triggerStatusId'=>$settings->triggerStatusId];
     } elseif (in_array($command,['inspect-order','sync-order'],true)) {
