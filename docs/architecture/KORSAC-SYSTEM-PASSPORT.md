@@ -184,7 +184,7 @@ SERIAL_NUMBER/internal slot key, production history, service data, customer
 name/contact/address and payment/delivery data. No query to a customer/account or
 production-history repository is needed to build this allowlist.
 
-## Canonical future public path
+## Canonical public path and separate HTTP delivery
 
 `PassportPath::build($publicId)` validates exact lowercase 32-hex shape and builds:
 
@@ -194,9 +194,12 @@ production-history repository is needed to build this allowlist.
 
 Use PUBLIC_ID, never SYSTEM_ID or numeric System.ID. SECRET_CODE/digest must never
 be passed as a path, query/fragment or QR value. Prepared public identity can be
-printed before handoff, but lookup stays not-found until activation. No final
-HTTP route/controller, HTML page, frontend template or QR image is implemented;
-a later delivery layer can call the existing public query service and path builder.
+printed before handoff, but lookup stays not-found until activation. Core v1
+reserved the contract; v0.12 now implements separate Bitrix HTTP/component
+delivery using this same query boundary. See
+[KORSAC-PUBLIC-PASSPORT-DELIVERY.md](KORSAC-PUBLIC-PASSPORT-DELIVERY.md) for
+200/404/500 semantics, privacy headers, installation and the real HTTP gate.
+QR image generation remains future work.
 
 ## CLI and sensitive issuing output
 
@@ -304,8 +307,9 @@ auto-merge disabled.
 
 Implemented: independent Passport persistence/identities/secret verification,
 prepare/explicit physical handoff, warranty start only, safe public query/path,
-backend CLI/migration/health/smoke. No public HTML/HTTP route/controller, QR images,
-frontend, ownership/User assignment/My systems/claim workflow, secret reissue UI,
+backend CLI/migration/health/smoke. Public HTML/HTTP delivery is implemented
+separately in v0.12; it does not change this Core lifecycle/schema/DTO contract.
+QR images, ownership/User assignment/My systems/claim workflow, secret reissue UI,
 service/repair/upgrade/component replacement, warranty duration/end/claims,
 production transition policy, payment/delivery/inventory/procurement/customer
 notifications, admin UI or King-Komp integration is added.

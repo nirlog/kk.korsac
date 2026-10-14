@@ -1,4 +1,4 @@
-# `kk.korsac` v0.11
+# `kk.korsac` v0.12
 
 Серверный Bitrix D7-модуль простых справочников KORSAC options. Требования: PHP 8.2+, Bitrix D7 `highloadblock`, поддерживаемый MySQL/MariaDB и права на создание индексов/удаление пустой legacy schema при migration.
 
@@ -216,7 +216,7 @@ php local/modules/kk.korsac/tests/Integration/system_core_smoke.php --confirm-wr
 The default smoke is read-only. Full contracts, migration, privacy, business
 timezone and manual validation are in
 [`KORSAC-SYSTEM-DOMAIN.md`](../../../docs/architecture/KORSAC-SYSTEM-DOMAIN.md).
-Public Passport HTML, warranty duration/claims, service workflow, ownership,
+Warranty duration/claims, service workflow, ownership,
 inquiries and System Admin UI remain future stages; Sale synchronization and
 production status/history are implemented in v0.10, Passport backend and
 handoff-based warranty start in v0.11. All persistence
@@ -260,8 +260,8 @@ Labels can be overridden with `system.php status-label set` without changing cod
 Event failures log only order ID/safe code and do not re-save or fail the saved
 Order. Details, operational commands and outstanding live Sale checks are in
 [`KORSAC-SYSTEM-SALE-AUTOMATION.md`](../../../docs/architecture/KORSAC-SYSTEM-SALE-AUTOMATION.md).
-Passport backend and warranty start are added in v0.11 below. Public HTTP,
-warranty duration/claims, ownership, service, System Admin UI and final storefront
+Passport backend and warranty start are added in v0.11 below, public HTTP in
+v0.12. Warranty duration/claims, ownership, service, System Admin UI and final storefront
 remain future work. No King-Komp runtime integration is introduced.
 
 
@@ -295,11 +295,48 @@ PREPARED/unknown/malformed public lookups return the same not-found result. Only
 ACTIVE resolves to the explicit DTO, with human SYSTEM_ID, model/type, dates and
 actual active component type/slot label/name. Numeric identities, Orders/Users,
 credentials/digests, snapshots, serials/internal slot keys and histories stay
-private. `/passport/{PUBLIC_ID}/` is a reserved future path, not an implemented
-HTTP page/controller. SECRET_CODE grants no ownership. Public HTML, QR images,
-ownership/reissue/service/Admin UI and warranty duration remain outside this PR.
+private. Core v1 reserved `/passport/{PUBLIC_ID}/`; v0.12 implements its HTTP
+delivery separately below. SECRET_CODE grants no ownership. QR images,
+ownership/reissue/service/Admin UI and warranty duration remain future work.
 
 Full contracts, timestamp precision, collision handling, safe commands and
 required live gate: [`KORSAC-SYSTEM-PASSPORT.md`](../../../docs/architecture/KORSAC-SYSTEM-PASSPORT.md).
 Live Passport checks require the standalone Bitrix test server and human
 architecture review before writes/merge; pure tests do not close that gate.
+
+
+## Public Passport HTTP delivery v1
+
+v0.12 adds `kk:korsac.passport` and `/passport/{PUBLIC_ID}/`, backed only by the
+existing public DTO/query service. ACTIVE is HTTP 200; malformed/unknown/PREPARED
+is the same generic 404; operational/unexpected failures are generic 500.
+Responses use noindex/nofollow/noarchive, no-referrer and no-store. The minimal
+Russian page escapes dynamic content, supports phones/print and requires no JS.
+No secret, hash, serial, numeric identity or Order/User data enters delivery.
+
+Fresh installation registers the narrow Bitrix rewrite and copies only proven
+module-owned Passport files. Existing installations upgrade without reinstall
+or migration 009:
+
+```bash
+php local/modules/kk.korsac/tools/system.php passport-delivery install
+php local/modules/kk.korsac/tools/system.php passport-delivery check
+php local/modules/kk.korsac/tests/Integration/system_passport_http_smoke.php
+php local/modules/kk.korsac/tests/Integration/system_passport_http_smoke.php --public-id=<ACTIVE_PUBLIC_ID>
+```
+
+Install is idempotent and repairs missing/outdated owned files and duplicate or
+malformed owned rewrite entries. It rejects foreign-file/route conflicts instead
+of overwriting applications. Check/smoke are read-only, and smoke is not a real
+HTTP route test. Uninstall removes only owned executable files/registration;
+Passport business data and unrelated application files/routes stay intact.
+Valid slashless paths redirect to a relative canonical path with no query.
+Malformed paths outside the narrow rewrite use the site's native 404 handler,
+which must also pass the real HTTP privacy/status gate.
+
+No absolute origin setting or QR image is added; future absolute QR payload must
+use an explicitly validated HTTPS origin plus the public path, never HTTP_HOST
+or a secret. Full contracts, ownership proof, curl commands and remaining live
+gate: [KORSAC-PUBLIC-PASSPORT-DELIVERY.md](../../../docs/architecture/KORSAC-PUBLIC-PASSPORT-DELIVERY.md).
+Human architecture review is required before live HTTP testing/merge. Real
+standalone Bitrix routing has not been validated by pure tests; no auto-merge.

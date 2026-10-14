@@ -1,0 +1,16 @@
+/* kk.korsac:public-passport-delivery:v1 */
+.kk-korsac-passport { box-sizing: border-box; width: min(100%, 52rem); margin: 2rem auto; padding: clamp(1rem, 4vw, 2.5rem); color: #1b252b; background: #fff; border: 1px solid #d5dde0; border-radius: .75rem; font: 1rem/1.6 system-ui, sans-serif; overflow-wrap: anywhere; }
+.kk-korsac-passport *, .kk-korsac-passport *::before, .kk-korsac-passport *::after { box-sizing: inherit; }
+.kk-korsac-passport__brand { margin: 0; color: #38505a; font-weight: 800; letter-spacing: .18em; }
+.kk-korsac-passport h1 { margin: .5rem 0 1.5rem; font-size: clamp(1.5rem, 6vw, 2rem); line-height: 1.25; }
+.kk-korsac-passport h2 { margin: .5rem 0; font-size: 1.25rem; line-height: 1.4; }
+.kk-korsac-passport__identity { padding-bottom: 1.5rem; }
+.kk-korsac-passport__id { margin: 0; font-size: clamp(1.6rem, 7vw, 2.4rem); font-weight: 700; letter-spacing: .04em; }
+.kk-korsac-passport__dates { display: grid; gap: 1rem; margin: 0 0 2rem; padding: 1.25rem; background: #f2f5f6; border-radius: .5rem; }
+.kk-korsac-passport dt { color: #42545d; }
+.kk-korsac-passport dd { margin: .2rem 0 0; font-weight: 650; }
+.kk-korsac-passport__components { padding: 0; list-style: none; }
+.kk-korsac-passport__components li { display: grid; gap: .25rem; padding: 1rem 0; border-bottom: 1px solid #d5dde0; }
+.kk-korsac-passport__slot { color: #42545d; font-weight: 600; }
+@media (min-width: 36rem) { .kk-korsac-passport__dates { grid-template-columns: 1fr 1fr; } .kk-korsac-passport__components li { grid-template-columns: minmax(8rem, 1fr) 3fr; gap: 1rem; } }
+@media print { .kk-korsac-passport { width: 100%; margin: 0; padding: 0; border: 0; color: #000; } .kk-korsac-passport__dates { background: none; border: 1px solid #aaa; } .kk-korsac-passport__identity, .kk-korsac-passport__dates, .kk-korsac-passport__components li { break-inside: avoid; } }

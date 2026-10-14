@@ -43,9 +43,10 @@ $test('configurator template safely serializes bootstrap and delegates to render
     $assert(!str_contains($component, 'Configurator.get') && !str_contains($component, 'Cart.add'));
 });
 
-$test('module file install owns only the configurator component destination', static function () use ($assert): void {
+$test('module file install keeps configurator copies scoped beside managed Passport delivery', static function () use ($assert): void {
     $installer = (string)file_get_contents(dirname(__DIR__, 2) . '/install/index.php');
-    $assert(str_contains($installer, "CopyDirFiles(__DIR__ . '/components', \$_SERVER['DOCUMENT_ROOT'] . '/local/components', true, true)"));
+    $assert(str_contains($installer, "CopyDirFiles(__DIR__ . '/components/kk/korsac.configurator', \$_SERVER['DOCUMENT_ROOT'] . '/local/components/kk/korsac.configurator', true, true)"));
+    $assert(str_contains($installer, 'PassportDeliveryFactory::create()->install()') && str_contains($installer, 'PassportDeliveryFactory::create()->remove()'));
     $assert(str_contains($installer, "DeleteDirFilesEx('/local/components/kk/korsac.configurator')"));
     $assert(!str_contains($installer, "DeleteDirFilesEx('/local/components/kk')"));
     $assert(str_contains($installer, "CopyDirFiles(__DIR__ . '/js'"));
