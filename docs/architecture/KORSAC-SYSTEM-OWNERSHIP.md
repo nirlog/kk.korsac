@@ -14,7 +14,7 @@ owner from Sale, email/phone or Basket. Normal creation remains unowned.
 Only an explicit successful claim establishes ownership in v1.
 
 ```text
-Trusted authenticated KORSAC User
+Trusted authenticated ACTIVE KORSAC User
   + ACTIVE physical System
   + ACTIVE Passport
   + matching PUBLIC_ID / SECRET_CODE
@@ -37,7 +37,7 @@ injected OwnershipGatewayInterface, OwnershipUserGatewayInterface and clock.
 Positive identity range is 1..2147483647. Credentials reuse the existing exact
 32-lowercase-hex Passport shape; no ownership token or credential copy is added.
 
-The whole first claim runs in one D7 transaction:
+Every claim attempt runs in one D7 transaction:
 
 1. Validate credential and target user identity shapes.
 2. Identify only Passport.SYSTEM_INTERNAL_ID by public identity. This is not an
@@ -46,19 +46,23 @@ The whole first claim runs in one D7 transaction:
 4. Lock/read that System's Passport FOR UPDATE and recheck public/parent identity
    and persisted Passport validity.
 5. Verify the locked hash with `hash_equals(persistedHash, hash('sha256', candidate))`.
-6. Require ACTIVE Passport and ACTIVE System, then validate the target user.
-7. Read latest history FOR UPDATE under the same parent lock; validate current
+6. Read latest history FOR UPDATE under the same parent lock; validate current
    owner/audit consistency before idempotency or owner-conflict handling.
-8. For an unowned System only, assign USER_ID/UPDATED_AT conditionally and append
+7. If already owned, require the Passport to remain ACTIVE; PREPARED is corrupt
+   state because Passport Core has no ACTIVE → PREPARED transition. Return the
+   same owner's existing result or reject a different user without checking
+   current User activity or System lifecycle eligibility.
+8. For an unowned System only, require ACTIVE Passport, ACTIVE System and an
+   existing ACTIVE target User. Assign USER_ID/UPDATED_AT conditionally and append
    the matching CLAIMED audit event. Commit before returning success.
 
 The parent→Passport order matches Passport Core. History is ordered by REVISION
-under the parent lock, not allocated through an unlocked MAX race. The user
-gateway queries only ID/ACTIVE in the same standalone Bitrix connection and uses
-a current locking User read; concurrent deactivation waits until the claim
-transaction completes. It does not cache authorization or read customer details.
+under the parent lock, not allocated through an unlocked MAX race. On first
+claim only, the user gateway queries ID/ACTIVE in the same standalone Bitrix
+connection and uses a current locking User read; concurrent deactivation waits
+until the claim transaction completes. It does not cache authorization or read customer details.
 Same-System claims serialize; different Systems retain independent parent locks
-but claims by the same target user may briefly share the user-row lock.
+but first claims by the same target user may briefly share the user-row lock.
 
 There is no detached PassportService::verifySecret authorization followed by a
 blind write. Its boolean still grants no ownership; OwnershipService makes the
@@ -86,11 +90,19 @@ are normalized to SQL DATETIME seconds. A clock before System creation or physic
 invalid state. Passport preparation/activation/warranty dates and credentials
 are not rewritten. No production status requirement or transition is introduced.
 
-Same user + valid credential + currently active user returns claimed=false with
-the existing revision/claimedAt. It performs no owner/history/timestamp write and
-does not read the clock or rotate credentials. Another valid active user with
-the correct credential receives system_ownership_already_claimed without the
-current owner ID. Wrong/malformed secret receives credentials_invalid regardless
+Same owner + valid credential + consistent persisted state returns claimed=false
+with the existing revision/claimedAt, even after the User becomes inactive or is
+deleted, or the System lifecycle becomes CANCELLED. It performs no
+owner/history/timestamp/Passport write, does not query the User gateway, read the
+clock or rotate credentials. ACTIVE User and ACTIVE System lifecycle are
+prerequisites for establishing new ownership only. An owned System still requires
+an ACTIVE, structurally valid Passport; PREPARED or mismatched Passport state is
+system_ownership_state_invalid, not an idempotent replay.
+
+A different user with the correct credential and consistent persisted state
+receives system_ownership_already_claimed without the current owner ID. This
+conflict does not depend on current User activity or System lifecycle eligibility.
+Wrong/malformed secret receives credentials_invalid regardless
 of whether the System is unowned, owned by the same user or owned by another.
 Credential validity is established before any ownership conflict disclosure.
 
@@ -112,8 +124,9 @@ operators/application use. It takes a short read transaction with the same paren
 lock to avoid half-state observations and writes nothing. It validates current/
 latest consistency; history reads additionally validate record identities and
 strict revision ordering. User existence/active status is not rechecked for
-historical reads. Deactivation/deletion after claim does not automatically clear
-the association or audit. No User lifecycle event handler or FK is introduced.
+historical reads or same-owner retries. Deactivation/deletion after claim and
+later System lifecycle changes do not automatically clear the association or
+audit. No User lifecycle event handler or FK is introduced.
 
 Revisions are positive signed INT32. V1 has only the first-claim event; consistent
 unowned state has empty history, therefore first claim is exactly revision 1.
@@ -215,9 +228,12 @@ preflight. Apply 009 successfully before enabling any programmatic claim caller.
 ## Errors and internal CLI
 
 Malformed/unknown PUBLIC_ID, malformed/wrong secret all map to
-system_ownership_credentials_invalid. Correct credential on PREPARED/inactive
-System maps to not_claimable. Missing/inactive/out-of-range user is user_invalid;
-corrupt/mismatched state is state_invalid. Other codes include already_claimed,
+system_ownership_credentials_invalid. For an unowned System, a correct credential
+on a PREPARED Passport or non-ACTIVE System maps to not_claimable, and a
+missing/inactive target User maps to user_invalid. Out-of-range target user
+identity is always user_invalid. Corrupt/mismatched Passport or current/history
+state is state_invalid; this includes an owned System with a PREPARED Passport.
+Other codes include already_claimed,
 read_failed, persist_failed, revision_exhausted, prefixed system_ownership_.
 Diagnostics contain only the machine code, never an existing owner, credential,
 SQL, driver detail or path. Known errors are recreated without private context.
@@ -237,8 +253,10 @@ no owner name/email, claim status or audit is added to their seven-field allowli
 
 ## Tests and standalone live gate
 
-Deterministic tests exercise first claim/exact audit, same-user repeat, competing
-users in both serialized orders and a winner committed between identification
+Deterministic tests exercise first claim/exact audit, same-user repeats after
+account inactivity/deletion and System cancellation without User/clock calls,
+existing-owner conflicts before first-claim eligibility, owned PREPARED/corrupt
+Passport rejection, competing users in both serialized orders and a winner committed between identification
 and locking; malformed/wrong credentials including owned Systems; User and
 signed bounds; Passport/lifecycle/corrupt-history failures; owner/history/commit
 rollback; sanitized read errors; inactive-account historical reads; revision

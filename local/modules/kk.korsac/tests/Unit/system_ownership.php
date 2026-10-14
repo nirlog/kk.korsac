@@ -91,8 +91,70 @@ $test('Ownership same-user repeat requires the credential and changes no timesta
     $f=$ownershipFixture(); $first=$f['service']->claim($f['pub'],$f['secret'],7); $state=$f['gateway']->systems[1]; $history=$f['gateway']->records; $passport=$f['gateway']->passport;
     $f['clock']->time=$f['clock']->time->modify('+1 day'); $again=$f['service']->claim($f['pub'],$f['secret'],7);
     $assert(!$again->claimed && $again->revision===$first->revision && $again->claimedAt==$first->claimedAt && $state===$f['gateway']->systems[1] && $history===$f['gateway']->records && $passport===$f['gateway']->passport);
-    $assert($f['clock']->calls===1 && $f['gateway']->writes===1 && $f['gateway']->appends===1);
+    $assert($f['clock']->calls===1 && $f['users']->reads===1 && $f['gateway']->writes===1 && $f['gateway']->appends===1);
 });
+foreach (['inactive','deleted'] as $account) {
+    $test('Ownership same-owner retry remains idempotent after account becomes '.$account,static function() use ($assert,$ownershipFixture,$account):void {
+        $f=$ownershipFixture(); $first=$f['service']->claim($f['pub'],$f['secret'],7); $assert($first->claimed);
+        $state=$f['gateway']->systems[1]; $history=$f['gateway']->records; $passport=$f['gateway']->passport;
+        if ($account==='inactive') $f['users']->active[7]=false; else unset($f['users']->active[7]);
+        $f['users']->fail=true; // Replay must not depend on the User gateway, even if it is unavailable.
+        $f['gateway']->events=[]; $f['clock']->time=$f['clock']->time->modify('+1 day');
+        $again=$f['service']->claim($f['pub'],$f['secret'],7);
+        $assert(!$again->claimed && $again->userId===7 && $again->revision===$first->revision && $again->claimedAt===$first->claimedAt);
+        $assert($state===$f['gateway']->systems[1] && $state->userId===7 && $state->updatedAt===$first->claimedAt && $history===$f['gateway']->records && $passport===$f['gateway']->passport);
+        $assert($f['users']->reads===1 && $f['clock']->calls===1 && $f['gateway']->writes===1 && $f['gateway']->appends===1);
+        $assert($f['gateway']->events===['begin','identify','lock-system','lock-passport','history','commit']);
+    });
+}
+$test('Ownership same-owner retry remains idempotent after System lifecycle becomes CANCELLED',static function() use ($assert,$ownershipFixture):void {
+    $f=$ownershipFixture(); $first=$f['service']->claim($f['pub'],$f['secret'],7); $s=$f['gateway']->systems[1];
+    $f['gateway']->systems[1]=new OwnershipSystemState(1,$s->systemId,7,'CANCELLED',$s->createdAt,$s->updatedAt);
+    $state=$f['gateway']->systems[1]; $history=$f['gateway']->records; $passport=$f['gateway']->passport; $f['users']->fail=true;
+    $again=$f['service']->claim($f['pub'],$f['secret'],7);
+    $assert(!$again->claimed && $again->revision===$first->revision && $again->claimedAt===$first->claimedAt && $again->userId===7);
+    $assert($state===$f['gateway']->systems[1] && $state->updatedAt===$first->claimedAt && $history===$f['gateway']->records && $passport===$f['gateway']->passport);
+    $assert($f['users']->reads===1 && $f['clock']->calls===1 && $f['gateway']->writes===1 && $f['gateway']->appends===1);
+});
+foreach ([6,9] as $targetUser) {
+    $test('Ownership existing-owner conflict precedes first-claim eligibility for target '.$targetUser,static function() use ($assert,$ownershipFixture,$ownershipError,$targetUser):void {
+        $f=$ownershipFixture(); $f['service']->claim($f['pub'],$f['secret'],7); $s=$f['gateway']->systems[1];
+        $f['gateway']->systems[1]=new OwnershipSystemState(1,$s->systemId,7,'CANCELLED',$s->createdAt,$s->updatedAt);
+        $f['users']->active[7]=false; $f['users']->fail=true;
+        $before=[$f['gateway']->systems,$f['gateway']->records,$f['gateway']->passport,$f['gateway']->writes,$f['gateway']->appends];
+        $ownershipError(static fn()=>$f['service']->claim($f['pub'],$f['secret'],$targetUser),'system_ownership_already_claimed');
+        $assert($before===[$f['gateway']->systems,$f['gateway']->records,$f['gateway']->passport,$f['gateway']->writes,$f['gateway']->appends]);
+        $assert($f['users']->reads===1 && $f['clock']->calls===1);
+    });
+}
+foreach (['inactive','deleted','cancelled'] as $state) {
+    $test('Ownership wrong secret discloses no ownership state after '.$state,static function() use ($assert,$ownershipFixture,$ownershipError,$state):void {
+        $f=$ownershipFixture(); $f['service']->claim($f['pub'],$f['secret'],7); $s=$f['gateway']->systems[1];
+        if ($state==='inactive') $f['users']->active[7]=false;
+        if ($state==='deleted') unset($f['users']->active[7]);
+        if ($state==='cancelled') $f['gateway']->systems[1]=new OwnershipSystemState(1,$s->systemId,7,'CANCELLED',$s->createdAt,$s->updatedAt);
+        $f['users']->fail=true; $f['gateway']->events=[];
+        $before=[$f['gateway']->systems,$f['gateway']->records,$f['gateway']->passport,$f['gateway']->writes,$f['gateway']->appends];
+        $ownershipError(static fn()=>$f['service']->claim($f['pub'],str_repeat('c',32),7),'system_ownership_credentials_invalid');
+        $assert($before===[$f['gateway']->systems,$f['gateway']->records,$f['gateway']->passport,$f['gateway']->writes,$f['gateway']->appends]);
+        $assert($f['users']->reads===1 && $f['clock']->calls===1 && $f['gateway']->events===['begin','identify','lock-system','lock-passport','rollback']);
+    });
+}
+foreach (['prepared','wrong-parent','wrong-public-id','corrupt-hash','missing-handoff','unknown-state'] as $defect) {
+    $test('Ownership established owner does not bypass '.$defect.' Passport validation',static function() use ($assert,$ownershipFixture,$ownershipError,$defect):void {
+        $f=$ownershipFixture(); $f['service']->claim($f['pub'],$f['secret'],7); $p=$f['gateway']->passport;
+        $f['gateway']->passport=new \KK\Korsac\System\PassportRecord(
+            $defect==='wrong-parent' ? 2 : 1,$defect==='wrong-public-id' ? str_repeat('d',32) : $p->publicId,
+            $defect==='corrupt-hash' ? 'invalid' : $p->secretCodeHash,$defect==='prepared' ? 'PREPARED' : ($defect==='unknown-state' ? 'EXPIRED' : 'ACTIVE'),
+            in_array($defect,['prepared','missing-handoff'],true) ? null : $p->transferredAt,$defect==='prepared' ? null : $p->warrantyStartedAt,$p->preparedAt,$p->updatedAt,
+        );
+        $f['users']->fail=true;
+        $before=[$f['gateway']->systems,$f['gateway']->records,$f['gateway']->passport,$f['gateway']->writes,$f['gateway']->appends];
+        foreach ([7,8] as $user) $ownershipError(static fn()=>$f['service']->claim($f['pub'],$f['secret'],$user),'system_ownership_state_invalid');
+        $assert($before===[$f['gateway']->systems,$f['gateway']->records,$f['gateway']->passport,$f['gateway']->writes,$f['gateway']->appends]);
+        $assert($f['users']->reads===1 && $f['clock']->calls===1);
+    });
+}
 $test('Ownership claim clock cannot precede System creation or physical handoff',static function() use ($assert,$ownershipFixture,$ownershipError):void {
     foreach (['-1 second','+30 minutes'] as $offset) {
         $f=$ownershipFixture(); $f['clock']->time=$f['origin']->modify($offset);
@@ -147,7 +209,8 @@ foreach (['missing-system','missing-passport','wrong-parent','wrong-public-id','
 foreach (['owner-without-history','history-without-owner','wrong-latest-owner','wrong-event','wrong-source','wrong-actor','wrong-parent'] as $defect) {
     $test('Ownership current/history '.$defect.' is rejected instead of repaired',static function() use ($assert,$ownershipFixture,$ownershipError,$defect):void {
         $f=$ownershipFixture(); $s=$f['gateway']->systems[1];
-        if ($defect!=='history-without-owner') $f['gateway']->systems[1]=new OwnershipSystemState(1,$s->systemId,7,'ACTIVE',$s->createdAt,$s->updatedAt);
+        $f['gateway']->systems[1]=new OwnershipSystemState(1,$s->systemId,$defect==='history-without-owner' ? null : 7,'CANCELLED',$s->createdAt,$s->updatedAt);
+        $f['users']->active[7]=false;
         if ($defect!=='owner-without-history') $f['gateway']->records=[new OwnershipHistoryRecord(1,$defect==='wrong-parent' ? 2 : 1,1,null,$defect==='wrong-latest-owner' ? 8 : 7,$defect==='wrong-event' ? 'TRANSFERRED' : 'CLAIMED',$defect==='wrong-source' ? 'MANUAL' : 'SECRET_CLAIM',$defect==='wrong-actor' || $defect==='wrong-latest-owner' ? 8 : 7,$f['origin'])];
         $before=[$f['gateway']->systems,$f['gateway']->records];
         $ownershipError(static fn()=>$f['service']->claim($f['pub'],$f['secret'],7),'system_ownership_state_invalid');
@@ -183,11 +246,11 @@ foreach (['identify','lock-system','lock-passport','history','user'] as $failure
         $ownershipError(static fn()=>$f['service']->claim($f['pub'],$f['secret'],7),'system_ownership_read_failed'); $assert($f['gateway']->writes===0 && $f['gateway']->records===[]);
     });
 }
-$test('Ownership reads current and audit without revalidating later-inactive accounts or writing anything',static function() use ($assert,$ownershipFixture,$ownershipError):void {
+$test('Ownership reads and same-owner retry preserve later-inactive accounts without writing anything',static function() use ($assert,$ownershipFixture):void {
     $f=$ownershipFixture(); $reads=new OwnershipReadService($f['gateway']); $assert($reads->current(1)->userId===null && $reads->history(1)===[]);
     $f['service']->claim($f['pub'],$f['secret'],7); $before=[$f['gateway']->systems,$f['gateway']->records,$f['gateway']->writes,$f['gateway']->appends]; $f['users']->active[7]=false;
     $assert($reads->current(1)->userId===7 && $reads->current(1)->revision===1 && count($reads->history(1))===1);
-    $ownershipError(static fn()=>$f['service']->claim($f['pub'],$f['secret'],7),'system_ownership_user_invalid');
+    $again=$f['service']->claim($f['pub'],$f['secret'],7); $assert(!$again->claimed && $again->revision===1 && $again->userId===7);
     $assert($before===[$f['gateway']->systems,$f['gateway']->records,$f['gateway']->writes,$f['gateway']->appends]);
 });
 $test('Ownership revision allocation is signed bounded and never wraps or resets',static function() use ($assert,$ownershipFixture,$ownershipError):void {

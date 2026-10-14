@@ -33,15 +33,16 @@ final class OwnershipService
                 catch (Throwable) { throw new SystemException('system_ownership_state_invalid'); }
                 // Authoritative locked credential, before any owner-conflict or audit-state disclosure.
                 if (!hash_equals($passport->secretCodeHash,hash('sha256',$secretCode))) throw new SystemException('system_ownership_credentials_invalid');
-                $system->assertValid();
-                if ($passport->state!=='ACTIVE' || $system->lifecycleState!=='ACTIVE') throw new SystemException('system_ownership_not_claimable');
-                if (!$this->users->isActiveUser($userId)) throw new SystemException('system_ownership_user_invalid');
                 $latest=$this->gateway->latestHistory($id);
                 OwnershipConsistency::assertCurrent($system,$latest);
                 if ($system->userId!==null) {
+                    // Ownership survives User/System eligibility changes, but an owned PREPARED Passport is corrupt.
+                    if ($passport->state!=='ACTIVE') throw new SystemException('system_ownership_state_invalid');
                     if ($system->userId!==$userId) throw new SystemException('system_ownership_already_claimed');
                     return new OwnershipClaimResult($id,$system->systemId,$userId,false,$latest->revision,$latest->createdAt);
                 }
+                if ($passport->state!=='ACTIVE' || $system->lifecycleState!=='ACTIVE') throw new SystemException('system_ownership_not_claimable');
+                if (!$this->users->isActiveUser($userId)) throw new SystemException('system_ownership_user_invalid');
                 $revision=OwnershipRevision::next($latest);
                 $at=PassportTimestamp::seconds($this->clock!==null ? ($this->clock)() : new DateTimeImmutable('now'));
                 if ($at<$system->createdAt || $at<$passport->transferredAt) throw new SystemException('system_ownership_state_invalid');
