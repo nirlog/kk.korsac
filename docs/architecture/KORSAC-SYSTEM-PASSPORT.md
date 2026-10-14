@@ -12,7 +12,7 @@ is changed.
 | SYSTEM_INTERNAL_ID | Private signed INT32 System.ID; parent relational identity, never public |
 | SYSTEM_ID | Existing immutable human physical ID, KS-YYMM-NNNN; public display is allowed, never a URL token |
 | PUBLIC_ID | Immutable opaque public web identity: 16 CSPRNG bytes encoded as 32 lowercase hex characters |
-| SECRET_CODE | Independent private 16-byte/32-lowercase-hex credential, issued once; no present ownership authority |
+| SECRET_CODE | Independent private 16-byte/32-lowercase-hex credential, issued once; verification alone grants no ownership |
 | SECRET_CODE_HASH | Only persisted secret representation: lowercase SHA-256 of the 32-character SECRET_CODE string |
 
 `SecurePassportCredentialGenerator` uses separate `random_bytes(16)` calls for
@@ -116,8 +116,11 @@ finds the Passport, hashes the candidate and compares with `hash_equals()`.
 Malformed, unknown, mismatching or unreadable credentials return false without
 storage details. The operation logs nothing, mutates nothing and returns only a
 boolean. PREPARED credentials may be verified internally. Verification grants no
-ownership, User association, public write action or other authority; the future
-claim layer needs its own authorization/lifecycle policy.
+ownership, User association, public write action or other authority. The separate
+v0.13 [OwnershipService](KORSAC-SYSTEM-OWNERSHIP.md) grants the first association
+only from an ACTIVE Passport, valid locked credential and active trusted User;
+it does not use this detached boolean as permission to write ownership. Public
+Passport projection/delivery stays ownership-blind.
 
 ## Activation at physical handoff
 
@@ -309,7 +312,8 @@ Implemented: independent Passport persistence/identities/secret verification,
 prepare/explicit physical handoff, warranty start only, safe public query/path,
 backend CLI/migration/health/smoke. Public HTML/HTTP delivery is implemented
 separately in v0.12; it does not change this Core lifecycle/schema/DTO contract.
-QR images, ownership/User assignment/My systems/claim workflow, secret reissue UI,
+Ownership first claim/audit is implemented separately in v0.13 without changing
+this Passport contract. QR images, public claim UI/My systems, ownership transfer, secret reissue UI,
 service/repair/upgrade/component replacement, warranty duration/end/claims,
 production transition policy, payment/delivery/inventory/procurement/customer
 notifications, admin UI or King-Komp integration is added.

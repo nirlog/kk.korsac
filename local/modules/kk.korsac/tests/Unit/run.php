@@ -590,6 +590,7 @@ require __DIR__ . '/system.php';
 require __DIR__ . '/system_sale.php';
 require __DIR__ . '/system_passport.php';
 require __DIR__ . '/system_passport_http.php';
+require __DIR__ . '/system_ownership.php';
 
 $failed = 0;
 foreach ($tests as $name => $callback) { try { $callback(); echo "PASS {$name}\n"; } catch (Throwable $e) { ++$failed; fwrite(STDERR, "FAIL {$name}: {$e->getMessage()}\n"); } }

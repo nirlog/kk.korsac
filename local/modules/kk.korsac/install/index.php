@@ -17,6 +17,8 @@ use KK\Korsac\System\SystemServiceFactory;
 use KK\Korsac\Install\PassportMigrationService;
 use KK\Korsac\Install\BitrixPassportTableGateway;
 use KK\Korsac\Install\PassportDeliveryFactory;
+use KK\Korsac\Install\OwnershipMigrationService;
+use KK\Korsac\Install\BitrixOwnershipTableGateway;
 
 class kk_korsac extends CModule
 {
@@ -63,6 +65,7 @@ class kk_korsac extends CModule
             (new SystemMigrationService($store, new BitrixSystemTableGateway()))->migrate();
             (new ProductionStatusMigrationService($store,new BitrixProductionStatusTableGateway(),SystemServiceFactory::registration()))->migrate();
             (new PassportMigrationService($store,new BitrixPassportTableGateway()))->migrate();
+            (new OwnershipMigrationService($store,new BitrixOwnershipTableGateway()))->migrate();
             $this->InstallFiles();
         } catch (Throwable $exception) {
             if ($registeredHere) {
@@ -74,7 +77,7 @@ class kk_korsac extends CModule
 
     public function DoUninstall(): void
     {
-        // Retain HL data, snapshots, physical Systems/components, sequence state, production status/history, Passports/credential hashes/handoff/warranty starts and migration history.
+        // Retain HL data, snapshots, physical Systems/components, sequence state, production status/history, Passports/credential hashes/handoff/warranty starts, System.USER_ID/ownership history and migration history.
         Loader::registerNamespace('KK\\Korsac', dirname(__DIR__) . '/lib');
         SystemServiceFactory::registration()->remove();
         $this->UnInstallFiles();
