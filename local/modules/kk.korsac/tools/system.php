@@ -11,6 +11,7 @@ use KK\Korsac\System\BitrixSystemSettingsGateway;
 use KK\Korsac\System\ProductionStatusLabels;
 use KK\Korsac\System\SystemServiceFactory;
 use KK\Korsac\System\SystemException;
+use KK\Korsac\Install\PassportDeliveryFactory;
 
 $documentRoot=($_SERVER['DOCUMENT_ROOT'] ?? '') ?: dirname(__DIR__,4);
 $_SERVER['DOCUMENT_ROOT']=$documentRoot;
@@ -18,22 +19,27 @@ if (!is_file($documentRoot.'/bitrix/modules/main/include/prolog_before.php')) { 
 require $documentRoot.'/bitrix/modules/main/include/prolog_before.php';
 try {
     $command=$argv[1] ?? '';
-    $passportCommand=in_array($command,['passport-prepare','passport-show','passport-activate','passport-public'],true);
+    $passportCommand=in_array($command,['passport-prepare','passport-show','passport-activate','passport-public','passport-delivery'],true);
     if (!Loader::includeModule('kk.korsac') || (!$passportCommand && !Loader::includeModule('sale'))) throw new SystemException('system_sale_required'); $action=$argv[2] ?? ''; $options=[];
-    foreach (array_slice($argv,$command==='sale-config' || $command==='status-labels' || $command==='status-label' ? 3 : 2) as $argument) {
+    foreach (array_slice($argv,in_array($command,['sale-config','status-labels','status-label','passport-delivery'],true) ? 3 : 2) as $argument) {
         if (!preg_match('/\A--([a-z-]+)=(.*)\z/D',$argument,$match) || isset($options[$match[1]])) throw new SystemException('system_cli_arguments_invalid');
         $options[$match[1]]=$match[2];
     }
     $allowed=match ($command) {
         'sale-config'=>$action==='set' ? ['status'] : [], 'inspect-order','sync-order'=>['order'],
         'passport-prepare','passport-show'=>['system'], 'passport-activate'=>['system','transferred-at'], 'passport-public'=>['public-id'],
+        'passport-delivery'=>['site'],
         'status-set'=>['system','status'], 'status-show'=>['system'], 'status-label'=>['status','label'], 'status-labels'=>[],
         default=>throw new SystemException('system_cli_arguments_invalid'),
     };
     if (array_diff(array_keys($options),$allowed)) throw new SystemException('system_cli_arguments_invalid');
     $required=static function(string $key) use ($options):string { if (!isset($options[$key]) || $options[$key]==='') throw new SystemException('system_cli_arguments_invalid'); return $options[$key]; };
     $configuration=SystemServiceFactory::configuration();
-    if ($command==='passport-public') {
+    if ($command==='passport-delivery') {
+        if (!in_array($action,['install','check'],true)) throw new SystemException('system_cli_arguments_invalid');
+        $delivery=PassportDeliveryFactory::create($options['site'] ?? null);
+        $result=$action==='install' ? $delivery->install() : $delivery->check();
+    } elseif ($command==='passport-public') {
         $result=SystemServiceFactory::publicPassports()->find($required('public-id'))->toArray();
     } elseif (in_array($command,['passport-prepare','passport-show','passport-activate'],true)) {
         $humanId=$required('system');
@@ -71,7 +77,9 @@ try {
         $state=$command==='status-set' ? SystemServiceFactory::production()->setStatus($system->id,$required('status'),'MANUAL') : (new BitrixProductionStatusGateway())->findCurrent($system->id);
         $result=['systemId'=>$humanId,'production'=>$state===null ? null : ['statusCode'=>$state->statusCode,'revision'=>$state->revision,'updatedAt'=>$state->updatedAt->format(DATE_ATOM)]];
     } else throw new SystemException('system_cli_arguments_invalid');
-    echo json_encode(['ok'=>true,'result'=>$result],JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),PHP_EOL;
+    $ok=$command!=='passport-delivery' || $result['ok'];
+    echo json_encode(['ok'=>$ok,'result'=>$result],JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),PHP_EOL;
+    if (!$ok) exit(1);
 } catch (Throwable $error) {
     fwrite(STDERR,json_encode(['ok'=>false,'code'=>$error instanceof SystemException ? $error->machineCode : 'system_cli_failed']).PHP_EOL); exit(1);
 }
