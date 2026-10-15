@@ -74,7 +74,6 @@ $test('Passport public HTML excludes every private-rich domain fixture value',st
     $prepared=$f['service']->preparePassport($id); $f['service']->activatePassport($id);
     $components=new class($id,$f['origin']) implements \KK\Korsac\System\SystemComponentRepositoryInterface {
         public function __construct(private int $id,private DateTimeImmutable $at) {}
-        public function create(\KK\Korsac\System\SystemComponent $component):\KK\Korsac\System\SystemComponent { throw new RuntimeException('Unexpected write'); }
         public function findForSystem(int $id,bool $activeOnly=false):array {
             if (!$activeOnly) throw new RuntimeException('Expected active-only component read');
             return [new \KK\Korsac\System\SystemComponent(8930111,$this->id,'SSD','PRIVATE_SLOT_1','SSD 1','Public disk','PRIVATE_SERIAL_1',$this->at,null,$this->at,$this->at)];

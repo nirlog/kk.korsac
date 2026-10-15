@@ -10,7 +10,9 @@ use KK\Korsac\Install\BitrixSystemTableGateway;
 use KK\Korsac\System\BitrixSystemComponentRepository;
 use KK\Korsac\System\BitrixSystemRepository;
 use KK\Korsac\System\BitrixSystemSequenceAllocator;
-use KK\Korsac\System\SystemComponent;
+use KK\Korsac\Component\BitrixComponentGateway;
+use KK\Korsac\Component\ComponentSpec;
+use KK\Korsac\Component\SystemComponentService;
 use KK\Korsac\System\SystemCreationService;
 use KK\Korsac\System\SystemException;
 use KK\Korsac\System\SystemIdGenerator;
@@ -89,11 +91,21 @@ try {
     $repeated = $service->create($input);
     if ($repeated->id !== $system->id || $repeated->systemId !== $system->systemId) throw new SystemException('system_smoke_creation_failed');
     if ($fixtureAllocator->allocations !== 1) throw new SystemException('system_smoke_idempotency_failed');
-    $now = new DateTimeImmutable('now'); $components = new BitrixSystemComponentRepository();
-    $active = $components->create(new SystemComponent(0,$system->id,'SSD','SSD_1','SSD 1','Synthetic disk',null,$now,null,$now,$now));
-    $removed = $components->create(new SystemComponent(0,$system->id,'SSD','SSD_2','SSD 2','Removed synthetic disk',null,$now,$now,$now,$now));
+    $components = new BitrixSystemComponentRepository();
+    // This original core fixture rolls back its entire synthetic System. Real MySQL savepoints
+    // keep the lifecycle gateway inside that outer transaction without a nested START TRANSACTION.
+    $savepointConnection=new class($connection) {
+        public function __construct(private object $connection) {}
+        public function startTransaction():void { $this->connection->queryExecute('SAVEPOINT korsac_core_component'); }
+        public function commitTransaction():void { $this->connection->queryExecute('RELEASE SAVEPOINT korsac_core_component'); }
+        public function rollbackTransaction():void { $this->connection->queryExecute('ROLLBACK TO SAVEPOINT korsac_core_component'); $this->connection->queryExecute('RELEASE SAVEPOINT korsac_core_component'); }
+        public function __call(string $method,array $arguments):mixed { return $this->connection->$method(...$arguments); }
+    };
+    $componentService=new SystemComponentService(new BitrixComponentGateway(static fn():object=>$savepointConnection));
+    $installed=$componentService->install($system->id,new ComponentSpec('SSD','SSD_1','SSD 1','Synthetic disk',null));
+    $active=$componentService->replace($system->id,$installed->component->componentId,new ComponentSpec('SSD','SSD_1','SSD 1','Replacement synthetic disk',null));
     $history = $components->findForSystem($system->id);
-    if ($active->systemInternalId !== $system->id || $removed->systemInternalId !== $system->id || count($history) !== 2 || count($components->findForSystem($system->id,true)) !== 1) throw new SystemException('system_smoke_component_failed');
+    if (!$installed->created || !$active->replaced || count($history) !== 2 || count($components->findForSystem($system->id,true)) !== 1 || $history[0]->removedAt!=$history[1]->installedAt) throw new SystemException('system_smoke_component_failed');
     foreach ($history as $component) {
         if ($component->systemInternalId !== $system->id) throw new SystemException('system_smoke_component_failed');
     }
