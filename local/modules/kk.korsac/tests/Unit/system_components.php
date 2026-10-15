@@ -257,11 +257,30 @@ $test('Components replacement retry rejects a non-linking immediate predecessor'
     $componentError(static fn()=>$f['service']->replace(1,1,$componentSpec(name:'Disk B',serial:'PRIVATE_B')),'system_component_replace_conflict'); $assert($before===$f['gateway']->records);
 });
 $test('Components ordinary ORM cannot add update or delete and read repository has no create API',static function() use ($assert,$componentError):void {
-    require_once __DIR__.'/fixtures/system_table_parent.php'; \Bitrix\Main\Entity\DataManager::$updates=[];
+    require_once __DIR__.'/fixtures/system_table_parent.php'; \Bitrix\Main\Entity\DataManager::$updates=[]; \Bitrix\Main\Entity\DataManager::$writes=[];
     $componentError(static fn()=>\KK\Korsac\System\SystemComponentTable::add(['NAME'=>'arbitrary']),'system_component_immutable');
-    foreach (['SYSTEM_INTERNAL_ID','TYPE_CODE','SLOT_KEY','SLOT_LABEL','NAME','SERIAL_NUMBER','INSTALLED_AT','REMOVED_AT','CREATED_AT','UPDATED_AT'] as $field) $componentError(static fn()=>\KK\Korsac\System\SystemComponentTable::update(1,[$field=>null]),'system_component_immutable');
+    $componentError(static fn()=>\KK\Korsac\System\SystemComponentTable::addMulti([['NAME'=>'arbitrary']]),'system_component_immutable');
+    foreach (['SYSTEM_INTERNAL_ID','TYPE_CODE','SLOT_KEY','SLOT_LABEL','NAME','SERIAL_NUMBER','INSTALLED_AT','REMOVED_AT','CREATED_AT','UPDATED_AT'] as $field) {
+        $componentError(static fn()=>\KK\Korsac\System\SystemComponentTable::update(1,[$field=>null]),'system_component_immutable');
+        $componentError(static fn()=>\KK\Korsac\System\SystemComponentTable::updateMulti([1,2],[$field=>null]),'system_component_immutable');
+    }
     $componentError(static fn()=>\KK\Korsac\System\SystemComponentTable::delete(1),'system_component_immutable');
-    $assert(\Bitrix\Main\Entity\DataManager::$updates===[] && !method_exists(\KK\Korsac\System\SystemComponentRepositoryInterface::class,'create') && !method_exists(\KK\Korsac\System\BitrixSystemComponentRepository::class,'create'));
+    $assert(\Bitrix\Main\Entity\DataManager::$updates===[] && \Bitrix\Main\Entity\DataManager::$writes===[] && !method_exists(\KK\Korsac\System\SystemComponentRepositoryInterface::class,'create') && !method_exists(\KK\Korsac\System\BitrixSystemComponentRepository::class,'create'));
+});
+$test('Components Objectify collection batch dispatch cannot bypass authority with either ignoreEvents mode',static function() use ($assert,$componentError):void {
+    require_once __DIR__.'/fixtures/system_table_parent.php'; \Bitrix\Main\Entity\DataManager::$updates=[]; \Bitrix\Main\Entity\DataManager::$writes=[];
+    $dataClass=\KK\Korsac\System\SystemComponentTable::class;
+    // Exact call/payload shapes from Collection::save(): RAW __object rows and equal CHANGED data.
+    // Inert objects suffice: a guard must reject before ORM interprets them. This is not a fake Collection.
+    $addObjects=[['__object'=>new stdClass()],['__object'=>new stdClass()]];
+    $primaries=[['ID'=>1],['ID'=>2]]; $dataSample=['NAME'=>'arbitrary','REMOVED_AT'=>null];
+    foreach ([false,true] as $ignoreEvents) {
+        $componentError(static fn()=>$dataClass::addMulti($addObjects,$ignoreEvents),'system_component_immutable');
+        $componentError(static fn()=>$dataClass::updateMulti($primaries,$dataSample,$ignoreEvents),'system_component_immutable');
+        $componentError(static fn()=>$dataClass::addMulti([],$ignoreEvents),'system_component_immutable');
+        $componentError(static fn()=>$dataClass::updateMulti([],[],$ignoreEvents),'system_component_immutable');
+    }
+    $assert(\Bitrix\Main\Entity\DataManager::$writes===[] && \Bitrix\Main\Entity\DataManager::$updates===[]);
 });
 
 // A small SQL/connection seam exercises the real gateway, not a Bitrix ORM emulator.

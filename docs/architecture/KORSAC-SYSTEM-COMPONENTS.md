@@ -110,8 +110,9 @@ The existing nonunique (SYSTEM_INTERNAL_ID,SLOT_KEY) index supports lookup only.
 MySQL UNIQUE with nullable REMOVED_AT would allow multiple NULL active rows and
 is not used as an invariant guarantee.
 
-Ordinary SystemComponentTable::add/update/delete throw
-system_component_immutable. SystemComponentRepositoryInterface and its Bitrix
+Ordinary SystemComponentTable::add/addMulti/update/updateMulti/delete throw
+system_component_immutable, including bulk calls with ignoreEvents=true or empty
+batches. SystemComponentRepositoryInterface and its Bitrix
 implementation are read-only: the old generic create() has been removed. The
 only controlled writes are fixed SQL close/insert operations scoped to one
 locked parent/slot. Calls outside a transaction, before locking, for a different
@@ -119,6 +120,40 @@ System/slot, through read-only scope or after completion are rejected. The gatew
 rechecks slot/serial/time invariants and refuses close-only or failed-write commit,
 even if a callback swallows the write exception. No generic field-update API is
 exposed.
+
+### D7 persistence entry-point audit
+
+The repository does not vendor or pin Bitrix Main, and this cloud has no live
+Bitrix runtime. The source audit uses the public Bitrix Main mirror at commit
+`3561e93cfdea3adc74c37f1e7f5b11da236cc517`:
+
+- [DataManager](https://github.com/avshatalov48/bitrix-core-business/blob/3561e93cfdea3adc74c37f1e7f5b11da236cc517/modules/main/lib/orm/data/datamanager.php)
+  exposes five public row-write entry points: add, addMulti, update, updateMulti
+  and delete. The bulk implementations are independent of the single-row
+  overrides. Internal sysAddInternal/sysAddMultiInternal are final protected
+  methods, not ordinary public entry points. Other public methods handle
+  reads/entity factories, validation, events, cache or configuration rather than
+  independently persisting component rows. No speculative deleteMulti or
+  deleteByFilter override is added: these are absent in the audited base class.
+- [Objectify Collection::save](https://github.com/avshatalov48/bitrix-core-business/blob/3561e93cfdea3adc74c37f1e7f5b11da236cc517/modules/main/lib/orm/objectify/collection.php#L378)
+  dispatches RAW objects as addMulti(__object rows, ignoreEvents). Equal CHANGED
+  values use updateMulti(primaries, dataSample, ignoreEvents); differing values
+  fall back to individual object save().
+- [EntityObject::save/delete](https://github.com/avshatalov48/bitrix-core-business/blob/3561e93cfdea3adc74c37f1e7f5b11da236cc517/modules/main/lib/orm/objectify/entityobject.php#L287)
+  dispatch through the data class's guarded add/update/delete methods. Object
+  and collection persistence therefore encounter a guard before component SQL.
+
+Unit regression tests exercise all five entry points, each mutable-field update,
+the Collection::save bulk payload/call shapes, default/false/true ignoreEvents
+and empty batches. Independent parent DataManager spies record any unguarded
+entry; all counters must remain empty. These are dispatch-contract tests, not a
+Bitrix Objectify emulator or a claim of deployed framework/database validation.
+An additional isolated PHP 8.2 source-audit probe loaded the pinned DataManager
+and actual Collection::save implementation: five direct write calls and four
+RAW/equal-CHANGED collection saves (both ignoreEvents values) were blocked.
+Only passive localization/result dependencies and inert objects were doubled;
+no database or Bitrix bootstrap was used. This does not certify the deployed
+Bitrix version or replace the standalone live gate.
 
 Conditional close updates REMOVED_AT/UPDATED_AT only, with predicates for ID,
 SYSTEM_INTERNAL_ID, SLOT_KEY and REMOVED_AT IS NULL; exactly one affected row is
