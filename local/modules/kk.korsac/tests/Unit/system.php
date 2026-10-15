@@ -209,7 +209,7 @@ $test('System SQL allocator validates periods before connecting and sanitizes dr
 });
 
 // Keep the expected domain contract explicit, independently of the production allowlist.
-foreach (['ID','SYSTEM_ID','SITE_ID','SYSTEM_TYPE','MODEL_NAME','IBLOCK_ID','PRODUCT_ID','ORDER_ID','ORDER_BASKET_ID','ORDER_UNIT_INDEX','CONFIG_SNAPSHOT_KEY','CREATED_AT'] as $immutableField) {
+foreach (['ID','SYSTEM_ID','SITE_ID','SYSTEM_TYPE','MODEL_NAME','IBLOCK_ID','PRODUCT_ID','ORDER_ID','ORDER_BASKET_ID','ORDER_UNIT_INDEX','CONFIG_SNAPSHOT_KEY','CREATED_AT','USER_ID'] as $immutableField) {
     $test('System ORM update rejects immutable '.$immutableField, static function () use ($assert,$systemError,$immutableField): void {
         require_once __DIR__ . '/fixtures/system_table_parent.php';
         \Bitrix\Main\Entity\DataManager::$updates = [];
@@ -224,7 +224,7 @@ $test('System ORM update delegates only intended mutable fields unchanged', stat
     require_once __DIR__ . '/fixtures/system_table_parent.php';
     \Bitrix\Main\Entity\DataManager::$updates = [];
     $now = new DateTimeImmutable('2026-10-12 10:00:00');
-    foreach ([['USER_ID'=>null], ['USER_ID'=>7], ['LIFECYCLE_STATE'=>'CANCELLED'], ['UPDATED_AT'=>$now], ['USER_ID'=>7,'LIFECYCLE_STATE'=>'ACTIVE','UPDATED_AT'=>$now]] as $data) {
+    foreach ([['LIFECYCLE_STATE'=>'CANCELLED'], ['UPDATED_AT'=>$now], ['LIFECYCLE_STATE'=>'ACTIVE','UPDATED_AT'=>$now]] as $data) {
         $assert(\KK\Korsac\System\SystemTable::update(1, $data) === ['delegated'=>true]);
         $assert(end(\Bitrix\Main\Entity\DataManager::$updates) === ['primary'=>1,'data'=>$data]);
     }

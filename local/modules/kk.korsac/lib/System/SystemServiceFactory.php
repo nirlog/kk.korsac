@@ -18,5 +18,7 @@ final class SystemServiceFactory
     public static function automation(): SaleOrderAutomation { return new SaleOrderAutomation(self::configuration(),new BitrixOrderProjectionAdapter(),self::synchronizer(),new BitrixSaleSynchronizationLogger()); }
     public static function passports(): PassportService { return new PassportService(new BitrixPassportRepository(),new SecurePassportCredentialGenerator()); }
     public static function publicPassports(): PublicPassportService { return new PublicPassportService(new BitrixPassportRepository(),new BitrixSystemRepository(),new BitrixSystemComponentRepository()); }
+    public static function ownership(): \KK\Korsac\Ownership\OwnershipService { return new \KK\Korsac\Ownership\OwnershipService(new \KK\Korsac\Ownership\BitrixOwnershipGateway(),new \KK\Korsac\Ownership\BitrixOwnershipUserGateway()); }
+    public static function ownershipReads(): \KK\Korsac\Ownership\OwnershipReadService { return new \KK\Korsac\Ownership\OwnershipReadService(new \KK\Korsac\Ownership\BitrixOwnershipGateway()); }
 
 }

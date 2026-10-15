@@ -1,4 +1,4 @@
-# `kk.korsac` v0.12
+# `kk.korsac` v0.13
 
 Серверный Bitrix D7-модуль простых справочников KORSAC options. Требования: PHP 8.2+, Bitrix D7 `highloadblock`, поддерживаемый MySQL/MariaDB и права на создание индексов/удаление пустой legacy schema при migration.
 
@@ -198,7 +198,8 @@ reference the existing immutable configuration snapshot; actual installed
 components and their serial numbers/history are separate internal records.
 Child records use `SYSTEM_INTERNAL_ID` (`SystemComponent::$systemInternalId`) for
 numeric System.ID; `SYSTEM_ID` always denotes the human KS identifier. Ordinary
-System ORM updates allow only USER_ID, LIFECYCLE_STATE and UPDATED_AT, preserving
+System ORM updates now allow only LIFECYCLE_STATE and UPDATED_AT; v0.13 ownership
+claims exclusively control USER_ID, preserving
 all creation-time source fields. System-core identity/reference
 columns use signed INT and positive D7-compatible IDs `1..2147483647`; source
 IDs above that range are rejected before sequence allocation. The earlier live
@@ -216,7 +217,7 @@ php local/modules/kk.korsac/tests/Integration/system_core_smoke.php --confirm-wr
 The default smoke is read-only. Full contracts, migration, privacy, business
 timezone and manual validation are in
 [`KORSAC-SYSTEM-DOMAIN.md`](../../../docs/architecture/KORSAC-SYSTEM-DOMAIN.md).
-Warranty duration/claims, service workflow, ownership,
+Warranty duration/claims, service workflow, ownership transfer,
 inquiries and System Admin UI remain future stages; Sale synchronization and
 production status/history are implemented in v0.10, Passport backend and
 handoff-based warranty start in v0.11. All persistence
@@ -261,7 +262,7 @@ Event failures log only order ID/safe code and do not re-save or fail the saved
 Order. Details, operational commands and outstanding live Sale checks are in
 [`KORSAC-SYSTEM-SALE-AUTOMATION.md`](../../../docs/architecture/KORSAC-SYSTEM-SALE-AUTOMATION.md).
 Passport backend and warranty start are added in v0.11 below, public HTTP in
-v0.12. Warranty duration/claims, ownership, service, System Admin UI and final storefront
+v0.12. Warranty duration/claims, ownership transfer, service, System Admin UI and final storefront
 remain future work. No King-Komp runtime integration is introduced.
 
 
@@ -296,8 +297,9 @@ ACTIVE resolves to the explicit DTO, with human SYSTEM_ID, model/type, dates and
 actual active component type/slot label/name. Numeric identities, Orders/Users,
 credentials/digests, snapshots, serials/internal slot keys and histories stay
 private. Core v1 reserved `/passport/{PUBLIC_ID}/`; v0.12 implements its HTTP
-delivery separately below. SECRET_CODE grants no ownership. QR images,
-ownership/reissue/service/Admin UI and warranty duration remain future work.
+delivery separately below. Passport verification alone grants no ownership;
+v0.13 adds the separate claim authority below. QR images, public claim UI,
+transfer/reissue/service/Admin UI and warranty duration remain future work.
 
 Full contracts, timestamp precision, collision handling, safe commands and
 required live gate: [`KORSAC-SYSTEM-PASSPORT.md`](../../../docs/architecture/KORSAC-SYSTEM-PASSPORT.md).
@@ -340,3 +342,46 @@ or a secret. Full contracts, ownership proof, curl commands and remaining live
 gate: [KORSAC-PUBLIC-PASSPORT-DELIVERY.md](../../../docs/architecture/KORSAC-PUBLIC-PASSPORT-DELIVERY.md).
 Human architecture review is required before live HTTP testing/merge. Real
 standalone Bitrix routing has not been validated by pure tests; no auto-merge.
+
+
+## System Ownership / Claim Core v1
+
+v0.13 / migration `2026_10_14_009_system_ownership_core` makes System.USER_ID the
+sole current-owner association and adds append-only ownership history. Normal
+creation stays unowned; ordinary ORM cannot assign/rewrite USER_ID. An explicit
+OwnershipService claim requires an ACTIVE System/Passport, the correct existing
+credential and an existing ACTIVE standalone KORSAC User. Parent → Passport
+locking, conditional first assignment and audit append occur in one transaction.
+Wrong secret is always a generic rejection before owner-conflict disclosure.
+Same-user repeat with a valid credential changes nothing; another user cannot
+reassign the System. Order customer never implies ownership.
+
+Migration 009 checks legacy non-null USER_ID before any ownership DDL and blocks
+with a count-only operator diagnostic; it does not clear owners or fabricate
+history. Once applied, ordinary repeat migrate permits legitimate v0.13 owners.
+The System/Passport SQL schema, prior migrations, credentials/activation and
+public DTO/HTTP page remain unchanged. Public Passport reveals no owner/claim data.
+
+```bash
+php local/modules/kk.korsac/tools/schema.php migrate
+php local/modules/kk.korsac/tools/schema.php check
+php local/modules/kk.korsac/tools/system.php ownership-show --system=<KS-ID>
+php local/modules/kk.korsac/tools/system.php ownership-history --system=<KS-ID>
+php local/modules/kk.korsac/tests/Integration/system_ownership_smoke.php
+# Architecture-reviewed fresh dedicated test System without Passport; persists business history.
+php local/modules/kk.korsac/tests/Integration/system_ownership_smoke.php --system=<FRESH_TEST_SYSTEM> --user=<ACTIVE_TEST_USER_ID> --confirm-write
+```
+
+CLI exposes only safe operator reads, never a claim command with secret argv.
+Optional `--concurrency=4` uses independent real workers with secret input only
+through anonymous stdin pipes, never argv/env/stdout/logs/files. Live writes retain
+Passport handoff and owner/audit; there is no cleanup/reset/reissue operation.
+Future HTTP must derive userId from the authenticated server-side session; no
+public claim endpoint/form or My systems UI is implemented here. Transfer,
+release/revocation, account lifecycle handling and secret reissue remain separate
+future operations. Normal uninstall preserves owner/audit/Passport history.
+
+Full security ordering, consistency, legacy policy and required live commands:
+[KORSAC-SYSTEM-OWNERSHIP.md](../../../docs/architecture/KORSAC-SYSTEM-OWNERSHIP.md).
+Human architecture review is required before controlled writes; pure tests do
+not validate live Bitrix/MySQL locking. No auto-merge.

@@ -22,6 +22,10 @@ use KK\Korsac\System\SystemServiceFactory;
 use KK\Korsac\Install\PassportMigrationService;
 use KK\Korsac\Install\BitrixPassportTableGateway;
 use KK\Korsac\Health\PassportSchemaSelfCheck;
+use KK\Korsac\Install\OwnershipMigrationService;
+use KK\Korsac\Install\BitrixOwnershipTableGateway;
+use KK\Korsac\Install\OwnershipLegacyAssignmentsException;
+use KK\Korsac\Health\OwnershipSchemaSelfCheck;
 
 $documentRoot = ($_SERVER['DOCUMENT_ROOT'] ?? '') ?: dirname(__DIR__, 4);
 $_SERVER['DOCUMENT_ROOT'] = $documentRoot;
@@ -40,8 +44,9 @@ if ($command === 'migrate') {
             (new SystemMigrationService($store, new BitrixSystemTableGateway()))->migrate(),
             (new ProductionStatusMigrationService($store,new BitrixProductionStatusTableGateway(),SystemServiceFactory::registration()))->migrate(),
             (new PassportMigrationService($store,new BitrixPassportTableGateway()))->migrate(),
+            (new OwnershipMigrationService($store,new BitrixOwnershipTableGateway()))->migrate(),
         );
-    } catch (SystemException $error) {
+    } catch (SystemException|OwnershipLegacyAssignmentsException $error) {
         fwrite(STDERR, json_encode(['ok'=>false, 'error'=>$error->diagnostic()]) . PHP_EOL);
         exit(1);
     }
@@ -54,7 +59,7 @@ $systems = (new SystemSchemaSelfCheck(new BitrixSystemTableGateway()))->run();
 $result['systems'] = $systems;
 $result['ok'] = $result['ok'] && $systems['ok'];
 $result['errors'] = array_merge($result['errors'], $systems['errors']);
-foreach (['snapshots'=>(new SnapshotSchemaSelfCheck(static fn(string $table):?array=>(new SqlTableInspector())->describe($table)))->run(), 'production'=>(new ProductionStatusSchemaSelfCheck(new BitrixProductionStatusTableGateway()))->run(), 'saleHandler'=>SystemServiceFactory::registration()->check(), 'passports'=>(new PassportSchemaSelfCheck(new BitrixPassportTableGateway()))->run()] as $name=>$check) {
+foreach (['snapshots'=>(new SnapshotSchemaSelfCheck(static fn(string $table):?array=>(new SqlTableInspector())->describe($table)))->run(), 'production'=>(new ProductionStatusSchemaSelfCheck(new BitrixProductionStatusTableGateway()))->run(), 'saleHandler'=>SystemServiceFactory::registration()->check(), 'passports'=>(new PassportSchemaSelfCheck(new BitrixPassportTableGateway()))->run(), 'ownership'=>(new OwnershipSchemaSelfCheck(new BitrixOwnershipTableGateway()))->run()] as $name=>$check) {
     $result[$name]=$check; $result['ok']=$result['ok'] && $check['ok']; $result['errors']=array_merge($result['errors'],$check['errors']);
 }
 echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), PHP_EOL;

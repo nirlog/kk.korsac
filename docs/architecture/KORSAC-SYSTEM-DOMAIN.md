@@ -165,9 +165,10 @@ owner or lifecycle and without consuming another number. Supplied snapshot
 relations are checked only for new creation; existing history is never rebuilt
 from current Product properties. Persistence has a narrow repository boundary:
 create, findById, findBySystemId and findByOrderUnit. There is no normal identifier
-update operation. Ordinary `SystemTable::update()` accepts only USER_ID,
-LIFECYCLE_STATE and UPDATED_AT; it rejects every other field, even when supplied
-with NULL or an unchanged value. The protected creation snapshot includes
+update operation. From v0.13, ordinary `SystemTable::update()` accepts only
+LIFECYCLE_STATE and UPDATED_AT; USER_ID is controlled by OwnershipService and
+ordinary creation must keep USER_ID NULL. Ordinary updates reject every other
+field, even with NULL or an unchanged value. The protected creation snapshot includes
 SYSTEM_ID, SITE_ID, SYSTEM_TYPE, MODEL_NAME, IBLOCK_ID, PRODUCT_ID, ORDER_ID,
 ORDER_BASKET_ID, ORDER_UNIT_INDEX, CONFIG_SNAPSHOT_KEY and CREATED_AT, as well as
 the internal ID. Mixed source/mutable updates fail before delegation to ORM.
@@ -218,8 +219,11 @@ must never include SERIAL_NUMBER. No public DTO/API is added here.
 ## Ownership and lifecycle boundaries
 
 System identity does not depend on User. Normal creation leaves USER_ID NULL;
-initial user assignment happens later at physical handoff. Future ownership
-changes must not alter SYSTEM_ID.
+v0.13 associates the first owner only through an explicit ACTIVE Passport secret
+claim after physical handoff. System.USER_ID is the sole current-owner authority;
+Order customer is unrelated. Owner changes must not alter SYSTEM_ID. See
+[KORSAC-SYSTEM-OWNERSHIP.md](KORSAC-SYSTEM-OWNERSHIP.md) for transaction/audit,
+ordinary ORM protection, legacy preflight and the trusted authenticated-user boundary.
 
 ACTIVE is a technical lifecycle value; CANCELLED is reserved. Neither encodes
 production progress. «Передан кладовщику», «Не хватает комплектующих», «Отправлен
@@ -339,7 +343,8 @@ status/history; see [KORSAC-SYSTEM-SALE-AUTOMATION.md](KORSAC-SYSTEM-SALE-AUTOMA
 System lifecycle remains separate. v0.11 adds independent Passport preparation,
 physical handoff and warranty-start/query core; see [KORSAC-SYSTEM-PASSPORT.md](KORSAC-SYSTEM-PASSPORT.md).
 v0.12 adds separate [public Passport HTTP delivery](KORSAC-PUBLIC-PASSPORT-DELIVERY.md).
-Planned separately: User assignment, ownership lifecycle, QR delivery, warranty duration/claims, service
+v0.13 adds separate [ownership first claim/audit](KORSAC-SYSTEM-OWNERSHIP.md).
+Planned separately: public claim UI, ownership transfer/release, QR delivery, warranty duration/claims, service
 repair/upgrade/data correction, inquiries and Bitrix Admin UI. Payment, delivery,
 inventory, suppliers and compatibility engines remain outside this core. No
 frontend change or external site integration is introduced.
