@@ -59,6 +59,27 @@ $test('Passport template accepts an ACTIVE System with no physical component row
     $html=$renderPassport(PublicPassportHttpView::active($httpDto()));
     $assert(str_contains($html,'KS-2610-0006') && str_contains($html,'Данные о комплектующих пока не внесены.'));
 });
+$test('Passport template preserves the reserved Bitrix component reference with empty and populated hardware',static function() use ($assert,$httpDto):void {
+    $bitrixComponent=new stdClass();
+    $template=new class($bitrixComponent) {
+        public function __construct(public object $__component) {}
+        public function render(PublicPassportHttpView $view):string {
+            if (!defined('B_PROLOG_INCLUDED')) define('B_PROLOG_INCLUDED',true);
+            $arResult=['VIEW'=>$view];
+            // CBitrixComponentTemplate::__IncludePHPTemplate() binds this reserved local by reference.
+            $component=&$this->__component;
+            ob_start();
+            try { include dirname(__DIR__,2).'/install/components/kk/korsac.passport/templates/.default/template.php'; return ob_get_clean(); }
+            catch (Throwable $error) { ob_end_clean(); throw $error; }
+        }
+    };
+    foreach ([[],[new PublicPassportComponent('SSD','SSD 1','Public disk'),new PublicPassportComponent('RAM','RAM 2','Public memory')]] as $components) {
+        $html=$template->render(PublicPassportHttpView::active($httpDto($components)));
+        $assert($template->__component===$bitrixComponent,'Template overwrote the reserved Bitrix component reference');
+        if ($components===[]) $assert(str_contains($html,'Данные о комплектующих пока не внесены.'));
+        else $assert(str_contains($html,'SSD 1') && str_contains($html,'Public disk') && str_contains($html,'RAM 2') && str_contains($html,'Public memory'));
+    }
+});
 $test('Passport NOT_FOUND and ERROR templates contain no Passport data or machine details',static function() use ($assert,$renderPassport):void {
     foreach ([PublicPassportHttpView::notFound(),PublicPassportHttpView::error()] as $view) {
         $html=$renderPassport($view);
