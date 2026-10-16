@@ -313,7 +313,11 @@ prepare/explicit physical handoff, warranty start only, safe public query/path,
 backend CLI/migration/health/smoke. Public HTML/HTTP delivery is implemented
 separately in v0.12; it does not change this Core lifecycle/schema/DTO contract.
 Ownership first claim/audit is implemented separately in v0.13 without changing
-this Passport contract. QR images, public claim UI/My systems, ownership transfer, secret reissue UI,
-service/repair/upgrade/component replacement, warranty duration/end/claims,
+this Passport contract. v0.14 adds separate [actual component lifecycle](KORSAC-SYSTEM-COMPONENTS.md):
+install/replacement changes the existing current component projection only, with
+stable slot ordering and no new public fields. Removed hardware and serials remain
+private; Passport credentials, activation, handoff and warranty start are unchanged.
+No QR images, public claim UI/My systems, ownership transfer, secret reissue UI,
+service/repair/upgrade workflow, warranty duration/end/claims,
 production transition policy, payment/delivery/inventory/procurement/customer
 notifications, admin UI or King-Komp integration is added.

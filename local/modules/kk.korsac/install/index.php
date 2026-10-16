@@ -19,6 +19,8 @@ use KK\Korsac\Install\BitrixPassportTableGateway;
 use KK\Korsac\Install\PassportDeliveryFactory;
 use KK\Korsac\Install\OwnershipMigrationService;
 use KK\Korsac\Install\BitrixOwnershipTableGateway;
+use KK\Korsac\Install\ComponentLifecycleMigrationService;
+use KK\Korsac\Health\SystemComponentDataHealth;
 
 class kk_korsac extends CModule
 {
@@ -66,6 +68,7 @@ class kk_korsac extends CModule
             (new ProductionStatusMigrationService($store,new BitrixProductionStatusTableGateway(),SystemServiceFactory::registration()))->migrate();
             (new PassportMigrationService($store,new BitrixPassportTableGateway()))->migrate();
             (new OwnershipMigrationService($store,new BitrixOwnershipTableGateway()))->migrate();
+            (new ComponentLifecycleMigrationService($store,new SystemComponentDataHealth()))->migrate();
             $this->InstallFiles();
         } catch (Throwable $exception) {
             if ($registeredHere) {

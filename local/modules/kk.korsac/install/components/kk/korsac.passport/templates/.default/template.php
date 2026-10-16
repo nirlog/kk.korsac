@@ -32,8 +32,8 @@ $passport=$view->passport;
                 <p>Данные о комплектующих пока не внесены.</p>
             <?php else: ?>
                 <ul class="kk-korsac-passport__components">
-                    <?php foreach ($passport->components as $component): ?>
-                        <li><span class="kk-korsac-passport__slot"><?= $escape($component->slotLabel) ?></span><span><?= $escape($component->name) ?></span></li>
+                    <?php foreach ($passport->components as $passportComponent): ?>
+                        <li><span class="kk-korsac-passport__slot"><?= $escape($passportComponent->slotLabel) ?></span><span><?= $escape($passportComponent->name) ?></span></li>
                     <?php endforeach; ?>
                 </ul>
             <?php endif; ?>

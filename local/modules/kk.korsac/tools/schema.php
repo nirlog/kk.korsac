@@ -26,6 +26,8 @@ use KK\Korsac\Install\OwnershipMigrationService;
 use KK\Korsac\Install\BitrixOwnershipTableGateway;
 use KK\Korsac\Install\OwnershipLegacyAssignmentsException;
 use KK\Korsac\Health\OwnershipSchemaSelfCheck;
+use KK\Korsac\Health\SystemComponentDataHealth;
+use KK\Korsac\Install\ComponentLifecycleMigrationService;
 
 $documentRoot = ($_SERVER['DOCUMENT_ROOT'] ?? '') ?: dirname(__DIR__, 4);
 $_SERVER['DOCUMENT_ROOT'] = $documentRoot;
@@ -45,6 +47,7 @@ if ($command === 'migrate') {
             (new ProductionStatusMigrationService($store,new BitrixProductionStatusTableGateway(),SystemServiceFactory::registration()))->migrate(),
             (new PassportMigrationService($store,new BitrixPassportTableGateway()))->migrate(),
             (new OwnershipMigrationService($store,new BitrixOwnershipTableGateway()))->migrate(),
+            (new ComponentLifecycleMigrationService($store,new SystemComponentDataHealth()))->migrate(),
         );
     } catch (SystemException|OwnershipLegacyAssignmentsException $error) {
         fwrite(STDERR, json_encode(['ok'=>false, 'error'=>$error->diagnostic()]) . PHP_EOL);
@@ -57,6 +60,10 @@ if ($command !== 'check') { fwrite(STDERR, "Usage: php schema.php [check|migrate
 $result = (new SchemaSelfCheck($gateway))->run();
 $systems = (new SystemSchemaSelfCheck(new BitrixSystemTableGateway()))->run();
 $result['systems'] = $systems;
+$components=(new SystemComponentDataHealth())->run();
+$result['components']=$components;
+$result['ok']=$result['ok'] && $components['ok'];
+$result['errors']=array_merge($result['errors'],$components['errors']);
 $result['ok'] = $result['ok'] && $systems['ok'];
 $result['errors'] = array_merge($result['errors'], $systems['errors']);
 foreach (['snapshots'=>(new SnapshotSchemaSelfCheck(static fn(string $table):?array=>(new SqlTableInspector())->describe($table)))->run(), 'production'=>(new ProductionStatusSchemaSelfCheck(new BitrixProductionStatusTableGateway()))->run(), 'saleHandler'=>SystemServiceFactory::registration()->check(), 'passports'=>(new PassportSchemaSelfCheck(new BitrixPassportTableGateway()))->run(), 'ownership'=>(new OwnershipSchemaSelfCheck(new BitrixOwnershipTableGateway()))->run()] as $name=>$check) {

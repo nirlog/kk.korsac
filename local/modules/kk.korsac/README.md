@@ -1,6 +1,12 @@
-# `kk.korsac` v0.13
+# `kk.korsac` v0.14
 
 Серверный Bitrix D7-модуль простых справочников KORSAC options. Требования: PHP 8.2+, Bitrix D7 `highloadblock`, поддерживаемый MySQL/MariaDB и права на создание индексов/удаление пустой legacy schema при migration.
+
+v0.14 adds authoritative actual physical component install/expected-ID replace,
+stable slots, immutable removed history, parent-row locking and private serial
+validation. It uses the existing component table; migration 010 only validates
+and adopts compatible legacy rows. Public Passport keeps its exact current
+three-field component projection. See [KORSAC-SYSTEM-COMPONENTS.md](../../../docs/architecture/KORSAC-SYSTEM-COMPONENTS.md).
 
 ## Schema
 
@@ -385,3 +391,49 @@ Full security ordering, consistency, legacy policy and required live commands:
 [KORSAC-SYSTEM-OWNERSHIP.md](../../../docs/architecture/KORSAC-SYSTEM-OWNERSHIP.md).
 Human architecture review is required before controlled writes; pure tests do
 not validate live Bitrix/MySQL locking. No auto-merge.
+
+
+## Actual System Components Core v1
+
+v0.14 / `2026_10_16_010_system_component_lifecycle_core` keeps the existing
+component table and schema. The explicit service installs into empty slots and
+replaces an expected current component atomically, preserving removed hardware.
+Exact install/replacement retries return the existing result without timestamp
+writes. Parent System FOR UPDATE, coherent slot history and closed ordinary ORM
+add/update/delete/repository-create paths enforce one active component per slot.
+Serials are nullable private data; no serial UNIQUE index or serial CLI argument
+is introduced. Public labels/names must contain only public hardware information.
+
+Migration 010 read-only validates/adopts compatible existing rows; invalid
+legacy data blocks without repair. `schema.php check` adds a distinct components
+data-health section. Ownership, production, Sale, Passport credentials/activation
+and handoff/warranty times remain independent and unchanged.
+
+```bash
+php local/modules/kk.korsac/tools/system.php component-current --system=<KS-ID>
+php local/modules/kk.korsac/tools/system.php component-history --system=<KS-ID>
+php local/modules/kk.korsac/tests/Integration/system_component_smoke.php
+```
+
+These reads expose safe component IDs/slots/names/times, never serials. After human
+architecture review, the standalone gate is:
+
+```bash
+php local/modules/kk.korsac/tools/schema.php migrate
+php local/modules/kk.korsac/tools/schema.php check
+php local/modules/kk.korsac/tests/Unit/run.php
+php local/modules/kk.korsac/tests/Integration/system_component_smoke.php
+php local/modules/kk.korsac/tests/Integration/system_component_smoke.php --system=<TEST_SYSTEM> --confirm-write
+php local/modules/kk.korsac/tests/Integration/system_component_smoke.php --system=<ANOTHER_TEST_SYSTEM> --confirm-write --concurrency=4
+```
+
+Write mode requires an ACTIVE dedicated test System with no history in its
+selected slot (default SSD_1, optional --slot=<STABLE_CODE>). It persists the
+successful install/replacement history and checks active Passport projection
+when available; no Passport/owner is required or created. Concurrent workers use
+NULL serials and test payloads over stdin, with exactly one write per phase.
+Use a new empty slot/System to rerun; do not delete successful physical history.
+Check real `/passport/{PUBLIC_ID}/` HTTP separately after replacement, including
+absence of old hardware/private data. No live Bitrix/MySQL concurrency or deployed
+HTTP gate has been certified in this cloud. See the architecture document for
+all invariants, fixture rules, safe errors and exact gate details. No auto-merge.

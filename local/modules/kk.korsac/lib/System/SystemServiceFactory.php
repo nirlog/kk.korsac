@@ -20,5 +20,7 @@ final class SystemServiceFactory
     public static function publicPassports(): PublicPassportService { return new PublicPassportService(new BitrixPassportRepository(),new BitrixSystemRepository(),new BitrixSystemComponentRepository()); }
     public static function ownership(): \KK\Korsac\Ownership\OwnershipService { return new \KK\Korsac\Ownership\OwnershipService(new \KK\Korsac\Ownership\BitrixOwnershipGateway(),new \KK\Korsac\Ownership\BitrixOwnershipUserGateway()); }
     public static function ownershipReads(): \KK\Korsac\Ownership\OwnershipReadService { return new \KK\Korsac\Ownership\OwnershipReadService(new \KK\Korsac\Ownership\BitrixOwnershipGateway()); }
+    public static function components(): \KK\Korsac\Component\SystemComponentService { return new \KK\Korsac\Component\SystemComponentService(new \KK\Korsac\Component\BitrixComponentGateway()); }
+    public static function componentReads(): \KK\Korsac\Component\ComponentReadService { return new \KK\Korsac\Component\ComponentReadService(new \KK\Korsac\Component\BitrixComponentGateway()); }
 
 }

@@ -202,19 +202,26 @@ controller yet.
 Indexes cover SYSTEM_INTERNAL_ID, (SYSTEM_INTERNAL_ID,SLOT_KEY) and
 (SYSTEM_INTERNAL_ID,REMOVED_AT). Multiple
 SSD/RAM/etc. positions are supported. A slot index is deliberately nonunique to
-retain replacement history. The future replacement service must close the old
-row and insert a new one, never overwrite the old component name. Enforcing one
-active component per slot belongs to that future transactional service.
+retain replacement history. From v0.14, SystemComponentService closes the old
+row and inserts a new one atomically under the parent System lock. One active
+component per slot, immutable slot type/label and coherent non-overlapping history
+are enforced by the controlled service/gateway and closed ordinary mutation paths.
 
-`BitrixSystemComponentRepository` checks the parent System, inserts a physical
-record and reads either all history or only REMOVED_AT IS NULL. It provides no
-repair/replacement/delete operation. The numeric domain relation is
+`BitrixSystemComponentRepository` is read-only: all history or only
+REMOVED_AT IS NULL, ordered by stable slot. Its old generic create() has been
+removed; ordinary component ORM add/update/delete are rejected. Only the
+explicit install/expected-ID replace service may mutate physical history.
+The numeric domain relation is
 `SystemComponent::$systemInternalId`; repository lookups also accept the internal
 System.ID. Same-module relationships are enforced by
 the application without physical foreign keys.
 
-Serial numbers are private internal/service data. Future public Passport DTOs
-must never include SERIAL_NUMBER. No public DTO/API is added here.
+Serial numbers are private internal/service data and never enter public Passport
+or ordinary CLI projections. SLOT_LABEL/NAME are public text, not a place for
+serials or private notes. Migration 010 adopts valid legacy physical history
+without DDL and blocks invalid state; schema check adds component data health.
+See [KORSAC-SYSTEM-COMPONENTS.md](KORSAC-SYSTEM-COMPONENTS.md) for the full
+lifecycle, privacy, transaction and controlled live-gate contract.
 
 ## Ownership and lifecycle boundaries
 
@@ -309,10 +316,13 @@ Write smoke uses ORDER_ID=2147483646 and a random ORDER_BASKET_ID in
 `2000000000..2147483646`, with a collision precheck; both are valid synthetic
 positive signed INT32 values. It creates one custom System (no real Order),
 verifies persisted source IDs exactly match the request, reads, idempotency,
-owner/lifecycle and two component positions with active/history filtering.
+owner/lifecycle and component install/replacement with active/history filtering.
 A counting wrapper around the real allocator verifies the fixture allocates
 exactly once across first creation and repeat, independently of unrelated
 concurrent allocations. It rolls back System/component fixtures and verifies their absence.
+Component lifecycle transactions use real MySQL savepoints inside that synthetic
+System fixture's outer rollback. The separate v0.14 component smoke retains
+successful physical history and requires another empty slot/System for each run.
 Sequence allocation uses its separate connection and **remains committed**: the
 first command consumes one monthly number; concurrency=N consumes N+1. This is
 intentional and checks that a rollback cannot reclaim identifiers. Never run it
@@ -344,6 +354,8 @@ System lifecycle remains separate. v0.11 adds independent Passport preparation,
 physical handoff and warranty-start/query core; see [KORSAC-SYSTEM-PASSPORT.md](KORSAC-SYSTEM-PASSPORT.md).
 v0.12 adds separate [public Passport HTTP delivery](KORSAC-PUBLIC-PASSPORT-DELIVERY.md).
 v0.13 adds separate [ownership first claim/audit](KORSAC-SYSTEM-OWNERSHIP.md).
+v0.14 adds authoritative [actual component install/replacement](KORSAC-SYSTEM-COMPONENTS.md)
+and lifecycle data health without changing the component table schema.
 Planned separately: public claim UI, ownership transfer/release, QR delivery, warranty duration/claims, service
 repair/upgrade/data correction, inquiries and Bitrix Admin UI. Payment, delivery,
 inventory, suppliers and compatibility engines remain outside this core. No

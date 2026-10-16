@@ -137,7 +137,6 @@ $test('Passport CLI transfer parsing is strict ISO-8601 and clocks use DATETIME 
 $test('Passport public malformed unknown and prepared lookups have identical generic not-found',static function()use($assert,$passportFixture,$systemRepo,$systemError,$passportHex):void{
     $f=$passportFixture();$prepared=$f['service']->preparePassport(1);
     $components=new class implements \KK\Korsac\System\SystemComponentRepositoryInterface {
-        public function create(\KK\Korsac\System\SystemComponent $c):\KK\Korsac\System\SystemComponent{throw new RuntimeException('Unexpected write');}
         public function findForSystem(int $id,bool $activeOnly=false):array{throw new RuntimeException('No component read before activation');}
     };
     $public=new \KK\Korsac\System\PublicPassportService($f['repo'],$systemRepo(),$components);
@@ -163,7 +162,6 @@ $publicPassportFixture=static function() use ($passportFixture):array {
     $f['components']=new class implements \KK\Korsac\System\SystemComponentRepositoryInterface {
         public ?Throwable $readFailure=null;
         public bool $activeRequested=false;
-        public function create(\KK\Korsac\System\SystemComponent $component):\KK\Korsac\System\SystemComponent { throw new RuntimeException('Unexpected write'); }
         public function findForSystem(int $id,bool $activeOnly=false):array { $this->activeRequested=$activeOnly; if ($this->readFailure!==null) throw $this->readFailure; return []; }
     };
     $f['public']=new \KK\Korsac\System\PublicPassportService($f['repo'],$f['systems'],$f['components']);
@@ -217,7 +215,6 @@ $test('Passport active DTO allowlists values and excludes private System and com
     $components=new class($f['origin'],$id) implements \KK\Korsac\System\SystemComponentRepositoryInterface {
         public bool $activeRequested=false;public array $records;
         public function __construct(DateTimeImmutable $at,int $id){$this->records=[new \KK\Korsac\System\SystemComponent(991191,$id,'SSD','PRIVATE_SLOT_1','SSD 1','Actual disk','PRIVATE_SN_ACTIVE',$at,null,$at,$at),new \KK\Korsac\System\SystemComponent(992192,$id,'SSD','PRIVATE_SLOT_1','SSD 1','Removed disk','PRIVATE_SN_REMOVED',$at,$at,$at,$at),new \KK\Korsac\System\SystemComponent(993193,1,'GPU','PRIVATE_SLOT_2','GPU','Wrong parent component','OTHER_PRIVATE_SN',$at,null,$at,$at)];}
-        public function create(\KK\Korsac\System\SystemComponent $c):\KK\Korsac\System\SystemComponent{throw new RuntimeException('Unexpected component write');}
         public function findForSystem(int $id,bool $activeOnly=false):array{$this->activeRequested=$activeOnly;return $this->records;}
     };
     $dto=(new \KK\Korsac\System\PublicPassportService($f['repo'],$systems,$components))->find($p->passport->publicId);$view=$dto->toArray();

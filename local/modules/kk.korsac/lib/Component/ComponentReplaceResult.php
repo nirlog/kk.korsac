@@ -1,0 +1,10 @@
+<?php
+
+declare(strict_types=1);
+
+namespace KK\Korsac\Component;
+
+final readonly class ComponentReplaceResult
+{
+    public function __construct(public ComponentCurrentView $component,public bool $replaced) {}
+}
