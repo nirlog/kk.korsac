@@ -1,4 +1,4 @@
-# `kk.korsac` v0.14
+# `kk.korsac` v0.15
 
 Серверный Bitrix D7-модуль простых справочников KORSAC options. Требования: PHP 8.2+, Bitrix D7 `highloadblock`, поддерживаемый MySQL/MariaDB и права на создание индексов/удаление пустой legacy schema при migration.
 
@@ -437,3 +437,44 @@ Check real `/passport/{PUBLIC_ID}/` HTTP separately after replacement, including
 absence of old hardware/private data. No live Bitrix/MySQL concurrency or deployed
 HTTP gate has been certified in this cloud. See the architecture document for
 all invariants, fixture rules, safe errors and exact gate details. No auto-merge.
+
+
+## My Systems Core v1
+
+v0.15 (2026-10-16) adds a read-only MySystemsService and strict account DTO.
+Membership is exactly current System.USER_ID; neither Order customer nor former
+ownership history grants access. CANCELLED-but-currently-associated Systems stay
+listed. No User activity/authentication decision is duplicated by the core.
+
+The projection contains human systemId, systemType, immutable modelName,
+lifecycleState, nullable persisted transfer/warranty-start dates, an ACTIVE-only
+canonical Passport path and current component typeCode/slotLabel/name. No internal
+IDs, user/order/product/snapshot data, serial/slotKey, removed history, secret/hash
+or invented warranty end is returned. PREPARED Passport has no path or dates.
+
+One SELECT pages parent Systems by CREATED_AT DESC/SYSTEM_ID DESC using the
+existing USER_ID index, with default limit=50, max=100 and offset>=0. It joins only
+that bounded window's Passport, latest ownership state and actual component
+history for existing consistency validators. Contradiction fails the entire page;
+operational errors are sanitized. No mutation, locking query, schema/migration,
+new account table or uninstall change is introduced.
+
+```bash
+php local/modules/kk.korsac/tools/system.php my-systems --user=<BITRIX_USER_ID>
+php local/modules/kk.korsac/tools/system.php my-systems --user=<BITRIX_USER_ID> --limit=50 --offset=0
+php local/modules/kk.korsac/tests/Integration/my_systems_smoke.php
+php local/modules/kk.korsac/tests/Integration/my_systems_smoke.php --user=<BITRIX_USER_ID>
+```
+
+Smoke is read-only with no write mode. Use confirmed owner and empty-account
+fixtures for the standalone live gate; do not modify ownership to prepare reads.
+No live Bitrix/MySQL read gate is certified in this cloud.
+
+**Customer account HTTP delivery is not implemented.** The frozen kk-template
+Account Experience remains the UX reference. Future HTTP must derive userId from
+the authenticated Bitrix server session/CurrentUser and never accept userId,
+ownerUserId or actorUserId from client GET/POST/JSON/hidden fields. CLI --user is
+trusted operator input only. Ownership request, unlink/transfer, auth/profile/UI
+and warranty duration/end remain separate work. Full query/privacy/error/live-gate
+contract: [KORSAC-MY-SYSTEMS.md](../../../docs/architecture/KORSAC-MY-SYSTEMS.md).
+Human architecture review required before merge; do not auto-merge.

@@ -22,7 +22,7 @@ if (!is_file($documentRoot.'/bitrix/modules/main/include/prolog_before.php')) { 
 require $documentRoot.'/bitrix/modules/main/include/prolog_before.php';
 try {
     $command=$argv[1] ?? '';
-    $passportCommand=in_array($command,['passport-prepare','passport-show','passport-activate','passport-public','passport-delivery','ownership-show','ownership-history','component-current','component-history'],true);
+    $passportCommand=in_array($command,['passport-prepare','passport-show','passport-activate','passport-public','passport-delivery','ownership-show','ownership-history','component-current','component-history','my-systems'],true);
     if (!Loader::includeModule('kk.korsac') || (!$passportCommand && !Loader::includeModule('sale'))) throw new SystemException('system_sale_required'); $action=$argv[2] ?? ''; $options=[];
     foreach (array_slice($argv,in_array($command,['sale-config','status-labels','status-label','passport-delivery'],true) ? 3 : 2) as $argument) {
         if (!preg_match('/\A--([a-z-]+)=(.*)\z/D',$argument,$match) || isset($options[$match[1]])) throw new SystemException('system_cli_arguments_invalid');
@@ -34,13 +34,17 @@ try {
         'passport-delivery'=>['site'],
         'ownership-show','ownership-history'=>['system'],
         'component-current','component-history'=>['system'],
+        'my-systems'=>['user','limit','offset'],
         'status-set'=>['system','status'], 'status-show'=>['system'], 'status-label'=>['status','label'], 'status-labels'=>[],
         default=>throw new SystemException('system_cli_arguments_invalid'),
     };
     if (array_diff(array_keys($options),$allowed)) throw new SystemException('system_cli_arguments_invalid');
     $required=static function(string $key) use ($options):string { if (!isset($options[$key]) || $options[$key]==='') throw new SystemException('system_cli_arguments_invalid'); return $options[$key]; };
     $configuration=SystemServiceFactory::configuration();
-    if (in_array($command,['component-current','component-history'],true)) {
+    if ($command==='my-systems') {
+        $input=\KK\Korsac\MySystems\MySystemsCliInput::fromOptions($options);
+        $result=SystemServiceFactory::mySystems()->listForUser($input->userId,$input->page)->toArray();
+    } elseif (in_array($command,['component-current','component-history'],true)) {
         $humanId=$required('system');
         if (!preg_match('/\AKS-[0-9]{2}(?:0[1-9]|1[0-2])-[0-9]{4}\z/D',$humanId)) throw new SystemException('system_source_invalid');
         $system=(new BitrixSystemRepository())->findBySystemId($humanId);

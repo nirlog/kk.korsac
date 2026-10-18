@@ -22,5 +22,6 @@ final class SystemServiceFactory
     public static function ownershipReads(): \KK\Korsac\Ownership\OwnershipReadService { return new \KK\Korsac\Ownership\OwnershipReadService(new \KK\Korsac\Ownership\BitrixOwnershipGateway()); }
     public static function components(): \KK\Korsac\Component\SystemComponentService { return new \KK\Korsac\Component\SystemComponentService(new \KK\Korsac\Component\BitrixComponentGateway()); }
     public static function componentReads(): \KK\Korsac\Component\ComponentReadService { return new \KK\Korsac\Component\ComponentReadService(new \KK\Korsac\Component\BitrixComponentGateway()); }
+    public static function mySystems(): \KK\Korsac\MySystems\MySystemsService { return new \KK\Korsac\MySystems\MySystemsService(new \KK\Korsac\MySystems\BitrixMySystemsGateway()); }
 
 }
